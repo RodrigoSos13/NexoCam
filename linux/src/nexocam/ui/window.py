@@ -1,3 +1,4 @@
+import asyncio
 import json
 import sys
 from threading import Event, Lock
@@ -9,6 +10,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
     QMainWindow,
     QMenu,
     QMessageBox,
@@ -19,18 +21,23 @@ from PySide6.QtWidgets import (
 )
 
 from nexocam.diagnostics.environment import report
+from nexocam.network.server import StreamServer
+from nexocam.security.identity import default_identity
 from nexocam.video.stream import run_pattern
 
 
 class Worker(QThread):
     failed = Signal(str)
     diagnostic = Signal(object)
+    status_changed = Signal(str)
+    pairing_ready = Signal(str, str, int)
 
-    def __init__(self, device=None, diagnostics=False):
+    def __init__(self, device=None, diagnostics=False, receive=False):
         super().__init__()
         self.stop = Event()
         self.device = device
         self.diagnostics = diagnostics
+        self.receive = receive
         self.lock = Lock()
         self.latest = None
 
@@ -47,6 +54,15 @@ class Worker(QThread):
         try:
             if self.diagnostics:
                 self.diagnostic.emit(report())
+            elif self.receive:
+                server = StreamServer(
+                    default_identity(),
+                    self.device,
+                    publish=self.publish,
+                    status=self.status_changed.emit,
+                    ready=self.pairing_ready.emit,
+                )
+                asyncio.run(server.run(self.stop))
             else:
                 run_pattern(self.stop, self.device, self.publish)
         except (OSError, ValueError, RuntimeError) as exc:
@@ -63,28 +79,35 @@ class Window(QMainWindow):
         self.closing = False
         self.show_report = False
         self.report_dialog = None
-        self.status = QLabel("Fundação Linux • vídeo sintético local")
+        self.status = QLabel("NexoCam • receptor Android e teste local")
         self.preview = QLabel("Inicie a prévia para verificar a imagem.")
         self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.preview.setMinimumSize(640, 480)
         self.devices = QComboBox()
         self.devices.addItem("Somente prévia — sem webcam virtual", None)
-        self.start = QPushButton("Iniciar teste de vídeo")
+        self.mode = QComboBox()
+        self.mode.addItem("Receber do Android • TLS / JPEG", True)
+        self.mode.addItem("Teste sintético local", False)
+        self.start = QPushButton("Iniciar")
         self.start.clicked.connect(self.begin)
         self.stop = QPushButton("Interromper")
         self.stop.setEnabled(False)
         self.stop.clicked.connect(self.end)
         self.diagnostics = QPushButton("Diagnósticos / atualizar dispositivos")
         self.diagnostics.clicked.connect(lambda: self.check(show_report=True))
+        self.pairing_info = None
+        self.pairing_button = QPushButton("Dados de pareamento")
+        self.pairing_button.setEnabled(False)
+        self.pairing_button.clicked.connect(self.show_pairing)
         self.metrics = QLabel("640 × 480 • meta: 15 FPS • RGB")
         title = QLabel("NexoCam")
         title.setStyleSheet("font-size: 28px; font-weight: bold; color: #58d6c7")
         root = QWidget()
         layout = QVBoxLayout(root)
-        for widget in (title, self.status, self.preview, self.metrics, self.devices):
+        for widget in (title, self.status, self.mode, self.preview, self.metrics, self.devices):
             layout.addWidget(widget)
         buttons = QHBoxLayout()
-        for button in (self.start, self.stop, self.diagnostics):
+        for button in (self.start, self.stop, self.pairing_button, self.diagnostics):
             buttons.addWidget(button)
         layout.addLayout(buttons)
         self.setCentralWidget(root)
@@ -152,7 +175,11 @@ class Window(QMainWindow):
         if self.worker is not None:
             return
         device = self.devices.currentData()
-        self.worker = Worker(device)
+        receiving = self.mode.currentData()
+        self.worker = Worker(device, receive=receiving)
+        self.worker.status_changed.connect(self.status.setText)
+        self.worker.pairing_ready.connect(self.paired)
+        self.mode.setEnabled(False)
         self.worker.failed.connect(self.error)
         self.worker.finished.connect(self.finished)
         self.start.setEnabled(False)
@@ -160,9 +187,59 @@ class Window(QMainWindow):
         self.stop.setEnabled(True)
         self.diagnostics.setEnabled(False)
         self.status.setText(
-            "Teste sintético em execução" + (" • webcam virtual" if device else " • prévia")
+            "Preparando servidor TLS..."
+            if receiving
+            else "Teste sintético em execução" + (" • webcam virtual" if device else " • prévia")
         )
         self.worker.start()
+
+    def paired(self, fingerprint, token, port):
+        self.pairing_info = (fingerprint, token, port)
+        self.pairing_button.setEnabled(True)
+        self.show_pairing()
+
+    def show_pairing(self):
+        if not self.pairing_info or self.closing:
+            return
+        from PySide6.QtWidgets import QDialog
+
+        if self.report_dialog:
+            self.report_dialog.close()
+        fingerprint, token, port = self.pairing_info
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Pareamento local seguro")
+        layout = QVBoxLayout(dialog)
+        instructions = QLabel(
+            f"No Android, informe o IPv4 deste computador e os dados abaixo. Porta {port}.\n"
+            "Use uma rede local confiável. O segredo vale 5 minutos para novas conexões.\n"
+            "Para revogar ou gerar outro segredo, interrompa e reinicie o receptor.\n"
+            "Não compartilhe fotos desta tela ou o segredo de pareamento."
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
+        from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
+
+        addresses = [
+            address.toString()
+            for address in QNetworkInterface.allAddresses()
+            if address.protocol() == QAbstractSocket.NetworkLayerProtocol.IPv4Protocol
+            and not address.isLoopback()
+        ]
+        for label, value in (
+            ("IPv4 deste computador (escolha o da rede local)", ", ".join(addresses)),
+            ("Impressão digital TLS", fingerprint),
+            ("Segredo temporário", token),
+        ):
+            layout.addWidget(QLabel(label))
+            field = QLineEdit(value)
+            field.setReadOnly(True)
+            field.setMinimumWidth(560)
+            layout.addWidget(field)
+        done = QPushButton("Fechar")
+        done.clicked.connect(dialog.close)
+        layout.addWidget(done)
+        self.report_dialog = dialog
+        dialog.show()
 
     def end(self):
         if self.worker:
@@ -173,6 +250,12 @@ class Window(QMainWindow):
     def finished(self):
         self.worker.deleteLater()
         self.worker = None
+        self.mode.setEnabled(True)
+        self.pairing_info = None
+        self.pairing_button.setEnabled(False)
+        if self.report_dialog:
+            self.report_dialog.close()
+            self.report_dialog = None
         self.preview.setText("Transmissão interrompida.")
         self.start.setEnabled(True)
         self.devices.setEnabled(True)
@@ -191,7 +274,7 @@ class Window(QMainWindow):
         frame, count, fps = value
         image = QImage(frame.data, 640, 480, frame.strides[0], QImage.Format.Format_RGB888).copy()
         self.preview.setPixmap(QPixmap.fromImage(image))
-        self.metrics.setText(f"640 × 480 • {fps:.1f} FPS produzidos • {count} quadros")
+        self.metrics.setText(f"640 × 480 • {fps:.1f} FPS de saída • {count} quadros")
 
     def closeEvent(self, event: QCloseEvent):
         self.closing = True

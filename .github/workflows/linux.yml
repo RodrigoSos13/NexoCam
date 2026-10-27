@@ -18,7 +18,7 @@ jobs:
         with:
           python-version: '${{ matrix.python }}'
       - run: python -m pip install -e './linux[dev]'
-      - run: python -m ruff check linux
-      - run: python -m ruff format --check linux
+      - run: python -m ruff check linux scripts
+      - run: python -m ruff format --check linux scripts
       - run: python -m pytest linux/tests
       - run: python -m build linux

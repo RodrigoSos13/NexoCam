@@ -1,45 +1,79 @@
-# Testes
+# Testes e evidências — 27/10/2026
 
-## Evidências locais — 27/10/2026
+## Linux
 
-CachyOS, kernel 7.3.0-4-cachyos, Python 3.14.8. Dependências instaladas em .venv;
-versões exatas em linux/requirements-tested-py314.txt. Esse snapshot só reproduz
-este ambiente Python 3.14, não é lock multiplataforma nem matriz comprovada.
+CachyOS, kernel 7.3.0-4-cachyos, Python 3.14.8. Dependências em .venv e snapshot
+em linux/requirements-tested-py314.txt (não é lock multiplataforma).
 
-- `python -m pytest linux/tests -q`: 16 testes aprovados, processo encerrou com 0.
-- `ruff check linux` e `ruff format --check linux`: aprovados.
-- `python -m pip check`: nenhuma dependência inconsistente.
-- `python -m compileall -q linux/src`: aprovado.
-- `python -m build linux`: wheel e sdist gerados (linux/dist/).
-- Wheel instalado sem dependências em diretório temporário separado: importação
-  comprovada fora do código-fonte e geração de quadro RGB aprovada.
-- Interface Qt: início, atualização de prévia e encerramento em modo offscreen.
-- Protocolo: JSON, envelope, versão e limites. Autenticação não está implementada.
-- Vídeo: RGB, cores, movimento, isolamento de memória e quadro neutro.
-- Recursos: recusa de câmera física, identificação loopback via ioctl simulado,
-  cancelamento, mailbox latest-only e fechamento em erro.
-- Diagnóstico real: módulo disponível, não carregado, nenhum /dev/video*.
-- CLI synthetic com caminho ausente: mensagem e saída 1, sem traceback.
+- `pytest linux/tests -q`: **21 testes aprovados**, exit 0.
+- `ruff check linux scripts`, `ruff format --check linux scripts`: aprovados.
+- `pip check`: sem inconsistências; `compileall linux/src`: aprovado.
+- Build wheel/sdist 0.2.0.dev1 em linux/dist/. Wheel instalado em diretório
+  temporário separado e importado fora dos fontes.
+- TLS real em localhost: certificado desconhecido e nome TLS incorreto recusados.
+- Autenticação correta, segredo incorreto/expirado, binário antes de autenticação,
+  mensagens grandes, timeout de negociação e segundo emissor recusados.
+- JPEG recebido/decodificado, ordem de sequência, dimensões, tamanho e RGB conferidos.
+  Falhas do OpenCV são convertidas em rejeição de protocolo.
+- ACK de quadro, desconexão, nova conexão, quadro neutro ao desconectar ou estagnar.
+- Captura sintética, ioctl simulado, recusa de câmera física e fechamento em erro.
+- Qt offscreen: prévia sintética, receptor TLS em porta efêmera, pareamento na UI,
+  cancelamento e fechamento de threads. Não comprova KDE/Wayland real.
 
-O teste Qt inicialmente revelou problema de destruição no teardown do teste;
-a fixture mantém QApplication viva e libera objetos pendentes explicitamente.
-As chamadas V4L2 em testes usam doubles; não comprovam o driver real.
-Workflow CI preparado para Python 3.11–3.14, mas não executado no GitHub.
+Sockets são bloqueados no sandbox desta sessão; os testes de integração passaram
+fora dele com autorização. Não foram substituídos por mocks nem marcados skip.
+As chamadas V4L2 nos testes continuam simuladas; não comprovam driver real.
+O usuário mostrou a imagem sintética no OBS por fonte de vídeo em screenshot;
+movimento, FPS e estabilidade não foram confirmados. Essa evidência não é teste
+Android ou de Wi-Fi.
 
-## Validação real pendente
+Emissor opcional sem celular, com receptor gráfico iniciado:
 
-A tentativa autorizada de carga com `sudo -n modprobe ...` não pôde continuar:
-o sudo exige senha. Não houve carga do módulo. A senha deve ser fornecida pelo
-usuário em seu próprio terminal, nunca enviada pelo chat.
+```sh
+.venv/bin/python scripts/send_synthetic.py --certificate ~/.local/share/nexocam/identity/identity.pem
+```
 
-1. Prepare o módulo seguindo installation-linux.md e execute o diagnóstico.
-2. Abra `.venv/bin/nexocam` na sessão KDE/Wayland. Teste prévia, diagnósticos,
-   seleção do dispositivo, iniciar/parar repetidamente, minimizar e fechar ativo.
-3. Selecione a saída virtual e inicie o teste. Abra OBS ou outro consumidor;
-   confirme barras coloridas e marcador inferior em movimento. Anote FPS real.
-4. Interrompa; confira quadro neutro quando retido pelo consumidor, e confirme que
-   outro produtor consegue abrir o dispositivo. Repita desconexão e encerramento.
-5. Teste Meet e Discord separadamente; registre dados em compatibility.md.
+O segredo é solicitado sem eco no terminal, nunca passado por argumento. Esse
+emissor implementa autenticação, JPEG e espera ACK; a suíte testa o mesmo caminho
+no servidor. O comando interativo acima não foi executado contra uma sessão do
+usuário. Não use certificado baixado de fonte desconhecida.
 
-Android, autenticação, JPEG, rede, reconexão, configurações persistentes e ADB
-terão testes nas fases correspondentes; não há resultados para essas funções.
+## Android
+
+Ferramentas locais: JDK17, Gradle8.11.1, AGP8.9.2, Kotlin2.1.20, API35/build-tools35.
+
+- `ktlintFormat` executado; `ktlintCheck` aprovado.
+- `testDebugUnitTest`: **3 testes aprovados**, nenhum ignorado. Entrada de pareamento,
+  segredo oculto no toString, certificado fixado correto, pin incorreto e ausência
+  de certificado. Fixture server.crt é pública e não contém chave privada.
+- `assembleDebug`: APK instalável de desenvolvimento gerado.
+- `assembleRelease`: APK release **sem assinatura** gerado.
+- `lintDebug`: zero erros e 10 avisos no relatório local: atualizações de
+  bibliotecas, TrustManager próprio e configuração de backup por versão Android.
+  Backup está explicitamente desabilitado no manifesto e nas regras de extração.
+  Veja relatório em android/app/build/reports/.
+- SDK reporta diferença de versão XML com AGP, sem impedir os builds.
+- Alguns binários nativos de dependências foram empacotados sem remoção de símbolos;
+  isso não foi tratado como falha de build.
+- ADB local executado: lista vazia. Nenhum APK foi instalado em aparelho nesta sessão.
+
+Workflows Linux/Android preparados; não executados no GitHub nesta sessão.
+
+## Teste físico necessário
+
+1. Instale o APK debug conforme installation-android.md. Abra o receptor atualizado
+   e feche a instância antiga para liberar V4L2/porta8765.
+2. Selecione Receber do Android, selecione NexoCam V4L2 e Iniciar. Copie o IPv4
+   correto, fingerprint e segredo da tela local para o Android em até cinco minutos.
+3. Ative a câmera e conecte. Confirme movimento no Android, Linux e OBS, distinguindo
+   prévia de captura da janela. Faça testes separados com Meet/Discord.
+4. Teste câmeras frontal/traseira, rotação, retrato/paisagem, perda de Wi-Fi,
+   reconexão com segredo ainda válido, expiração e novo pareamento.
+5. Desligue a câmera/bloqueie o Android: confira desconexão e quadro neutro no
+   receptor. Reinicie e feche receptor ativo; confira liberação do dispositivo.
+6. Registre modelo/Android/kernel/ambiente/consumidor, FPS real e resultado na matriz.
+7. ADB Reverse manual é opcional, exige depuração autorizada e ainda não foi testado.
+
+Medição física de FPS capturado/recebido/entregue, taxa de dados e latência completa
+permanece pendente. A UI Linux atual mede FPS de saída do worker, inclusive quadros
+neutros/repetidos, não FPS da câmera Android.

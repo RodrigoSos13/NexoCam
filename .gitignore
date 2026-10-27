@@ -30,3 +30,11 @@ core
 core.*
 recordings/
 captures/
+
+# Ferramentas e dados de desenvolvimento locais
+.tools/
+.runtime/
+.kotlin/
+.android/
+*.apk
+*.aab

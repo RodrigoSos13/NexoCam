@@ -1,16 +1,18 @@
 # Evolução
 
-1. Fundação: pacote, diagnóstico, detecção V4L2, padrão sintético, UI e testes.
-   Bloqueio de validação real: falta dispositivo virtual carregado/acessível.
-2. Transmissão: projeto Android compilável, CameraX, JPEG, servidor WebSocket TLS,
-   identidade, autenticação e pareamento manual seguro; integração e teste Wi-Fi.
-3. USB: ADB com timeout, dispositivos autorizados, reverse com propriedade e limpeza,
-   usando o mesmo protocolo. Requer aparelho e depuração autorizada.
-4. Produto: reconexão, métricas, configurações persistentes, QR, tradução, UX,
-   diagnósticos acionáveis e distribuição. UI atual é ferramenta de fundação.
-5. Medir desempenho, avaliar H.264, ampliar matriz e releases assinadas.
+1. Fundação Linux implementada: pacote, diagnóstico, V4L2, padrão sintético, UI e
+   testes. Usuário mostrou barras sintéticas recebidas por fonte de vídeo no OBS;
+   estabilidade/movimento/FPS não foram confirmados.
+2. Captura/transmissão implementadas: Android compilável, CameraX, JPEG,
+   WebSocket TLS, pinning, segredo temporário manual, receptor integrado à UI,
+   controle de fluxo, reconexão e testes TLS sem aparelho. Falta validar instalação,
+   câmera física, câmeras frontal/traseira e Android → Wi-Fi → Linux → OBS.
+3. USB: protocolo compartilhado permite ADB Reverse manual; automação de detecção,
+   autorização, propriedade e limpeza dos encaminhamentos ainda não implementada.
+4. Produto: QR, descoberta, pareamento persistente/revogação por aparelho,
+   configurações completas, métricas, acessibilidade, tradução e instaladores.
+5. Medir latência/desempenho, otimizar conversão, avaliar H.264, ampliar matriz,
+   assinatura e processo de releases. Nada disso está declarado pronto.
 
-Critérios da primeira versão completa: build Android, captura, sessão autenticada,
-recepção e decodificação, V4L2 contínuo, câmeras frontal/traseira, Wi-Fi/USB,
-reconexão e encerramento estáveis, instalação reproduzível, testes aprovados.
-Nenhum item dependente de Android ou transmissão está concluído na fase 1.
+A primeira versão funcional completa exige validação física Wi-Fi/USB, reconexão,
+encerramento e consumidores, além dos builds e testes automatizados já existentes.

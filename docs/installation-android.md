@@ -1,10 +1,69 @@
-# Android — etapa pendente
+# Instalação Android
 
-Ainda não há aplicativo, APK ou build Gradle nesta entrega da fundação. Não há
-assinaturas, credenciais ou local.properties no repositório.
+## Compilar
 
-Próxima etapa: configurar SDK e Gradle Wrapper verificável, Kotlin/Compose/CameraX,
-Android mínimo API 28, câmera mediante permissão e ação explícita, prévia com ciclo
-de vida e captura JPEG. Verificar versões oficiais antes de fixar dependências.
-Wi-Fi exigirá TLS e pareamento; USB inicialmente exigirá depuração USB e ADB Reverse.
-Nenhuma dessas funções está implementada ou validada nesta fase.
+Requisitos: JDK 17, SDK Android API 35, build-tools 35.0.0, Gradle Wrapper incluído.
+Não use o Java 27 do sistema com esse Gradle. Não altere o Java global; aponte
+JAVA_HOME para o JDK 17 no terminal ou configure o Gradle JDK no Android Studio.
+Configure ANDROID_HOME ou crie android/local.properties com `sdk.dir=/caminho/do/sdk`.
+Esse arquivo deve permanecer fora do Git. A instalação inicial baixa dependências;
+a transmissão funciona sem internet depois de instalada.
+
+No diretório android:
+
+```sh
+./gradlew assembleDebug testDebugUnitTest lintDebug ktlintCheck
+./gradlew assembleRelease
+```
+
+Para corrigir formatação, execute `./gradlew ktlintFormat` separadamente antes do
+check. O wrapper verifica o SHA-256 da distribuição Gradle. A versão atual usa um
+conjunto estável de dependências validado pelo build, não as últimas versões de
+cada biblioteca. Revise atualizações e compatibilidade antes de migrar.
+
+APK debug: `app/build/outputs/apk/debug/app-debug.apk` (assinado com chave de
+desenvolvimento local). Release: `app/build/outputs/apk/release/app-release-unsigned.apk`.
+A chave debug fica no diretório local de ferramentas/usuário, nunca deve ir ao Git.
+Para releases públicas, use uma chave privada externa e `apksigner`; não assine
+releases com chave debug e não coloque senhas nos scripts ou na linha de comando.
+Ainda não há distribuição assinada pronta.
+
+Neste ambiente as ferramentas foram baixadas para `.tools/`, ignorada pelo Git:
+JDK em `.tools/jdk/`, SDK em `.tools/sdk`, cache Gradle em `.tools/gradle-home`.
+O Java do sistema não foi substituído. Aponte as variáveis para essas pastas se
+quiser reutilizá-las. Android Studio também pode abrir o projeto android/.
+
+## Instalar e usar
+
+Transfira o APK debug ao celular e abra-o para instalar, autorizando a origem
+quando solicitado pelo Android. Alternativamente, com depuração USB habilitada,
+autorização concedida no aparelho e `adb devices` mostrando `device`:
+
+```sh
+adb install -r app/build/outputs/apk/debug/app-debug.apk
+```
+
+1. Abra o receptor Linux, selecione Receber do Android e Iniciar.
+2. No celular, abra NexoCam e toque em Ativar câmera. Conceda CAMERA.
+3. Escolha o IPv4 do computador na mesma rede e copie os 64 caracteres da
+   impressão digital e os 64 caracteres do segredo temporário exibidos no Linux.
+4. Toque em Conectar e transmitir. O certificado será verificado antes do segredo.
+5. Confira prévia recebida no Linux e depois selecione NexoCam no OBS.
+6. Teste troca de câmera, desconexão e encerramento. Mantenha o Android visível:
+   ao trocar de aplicativo ou bloquear a tela, a sessão e a câmera são encerradas.
+
+Segredo expirado: interrompa e reinicie o receptor para gerar outro. Falha de
+identidade: confira a impressão digital diretamente na interface do computador;
+nunca desative a verificação TLS. Reiniciar o receptor não altera seu certificado.
+Se houver mais de um IPv4, escolha a interface da rede que o celular alcança.
+A porta TCP 8765 precisa ser permitida pelo firewall; não exponha o serviço à internet.
+
+## Cabo — diagnóstico manual de transporte, ainda sem integração gráfica
+
+A fase de detecção e gerenciamento automático ADB ainda está pendente. Para
+experimentar manualmente o mesmo protocolo, com um único aparelho autorizado:
+`adb reverse tcp:8765 tcp:8765`; use `127.0.0.1` como IP no Android, mantendo a
+mesma impressão digital e segredo. Remova somente esse encaminhamento se foi
+você quem o criou: `adb reverse --remove tcp:8765`. Verifique previamente
+`adb reverse --list` para não sobrescrever encaminhamento de outro aplicativo.
+Isso exige depuração USB e não é UVC nativo. Ainda não foi validado em aparelho.

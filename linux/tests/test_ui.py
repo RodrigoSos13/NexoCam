@@ -28,6 +28,7 @@ def app():
 def test_ui_preview_start_stop(app):
     window = Window()
     window.show()
+    window.mode.setCurrentIndex(1)
     window.begin()
     from time import monotonic, sleep
 
@@ -54,3 +55,39 @@ def test_ui_preview_start_stop(app):
     window.deleteLater()
     QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
     app.processEvents()
+
+
+def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
+    from time import monotonic, sleep
+
+    from nexocam.security.identity import Identity
+    from nexocam.ui import window as window_module
+
+    monkeypatch.setattr(window_module, "default_identity", lambda: Identity(tmp_path / "identity"))
+    # Porta efêmera evita depender de uma instância do usuário já aberta em 8765.
+    original = window_module.StreamServer
+    monkeypatch.setattr(
+        window_module,
+        "StreamServer",
+        lambda *args, **kwargs: original(*args, **kwargs, host="127.0.0.1", port=0),
+    )
+    window = Window()
+    window.show()
+    window.begin()
+    deadline = monotonic() + 5
+    try:
+        while window.pairing_info is None and monotonic() < deadline:
+            app.processEvents()
+            sleep(0.01)
+        assert window.pairing_info is not None
+        assert window.pairing_button.isEnabled()
+    finally:
+        window.close()
+        while (window.worker is not None or window.checker is not None) and monotonic() < deadline:
+            app.processEvents()
+            sleep(0.01)
+        assert window.worker is None
+        assert window.pairing_info is None
+        window.deleteLater()
+        QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+        app.processEvents()

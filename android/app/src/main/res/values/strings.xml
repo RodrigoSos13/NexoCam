@@ -1,0 +1,21 @@
+<resources>
+    <string name="app_name">NexoCam</string>
+    <string name="activate_camera">Ativar câmera</string>
+    <string name="camera_permission">Autorize a câmera nas configurações do Android para visualizar e transmitir.</string>
+    <string name="visible_only">Mantenha esta tela visível durante a transmissão. Ao sair, a câmera e a conexão serão interrompidas.</string>
+    <string name="computer_address">IP do computador</string>
+    <string name="fingerprint">Impressão digital TLS (64 caracteres)</string>
+    <string name="pairing_secret">Segredo temporário de pareamento</string>
+    <string name="connect">Conectar e transmitir</string>
+    <string name="disconnect">Desconectar</string>
+    <string name="switch_camera">Alternar frontal/traseira</string>
+    <string name="stop_camera">Desativar câmera</string>
+    <string name="disconnected">Desconectado</string>
+    <string name="connecting">Conectando com verificação TLS…</string>
+    <string name="authenticating">Autenticando sessão…</string>
+    <string name="streaming">Transmitindo • JPEG 640 × 480 • limite 15 FPS</string>
+    <string name="reconnecting">Conexão perdida. Tentando reconectar…</string>
+    <string name="connection_error">Conexão recusada ou indisponível. Confira IP, firewall, identidade TLS e validade do segredo no computador.</string>
+    <string name="invalid_pairing">Informe IPv4, impressão digital e segredo exatamente como exibidos no computador.</string>
+    <string name="camera_error">Não foi possível abrir ou processar a câmera. Feche outros aplicativos e tente novamente.</string>
+</resources>
