@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=NexoCam
+Comment=Webcam Android para Linux
+Exec=nexocam
+Icon=nexocam
+Terminal=false
+Categories=AudioVideo;Video;

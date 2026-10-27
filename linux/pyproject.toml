@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nexocam"
+version = "0.1.0.dev1"
+description = "Webcam Android para Linux — fundação e diagnóstico"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = ["numpy>=2.2,<3", "pyvirtualcam>=0.14,<0.16", "PySide6>=6.8,<7"]
+
+[project.optional-dependencies]
+dev = ["pytest>=8,<10", "ruff>=0.11,<1", "build>=1,<2"]
+
+[project.scripts]
+nexocam = "nexocam.cli:main"
+nexocam-diagnostics = "nexocam.diagnostics.environment:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.data-files]
+"share/applications" = ["resources/nexocam.desktop"]
+"share/icons/hicolor/scalable/apps" = ["resources/nexocam.svg"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"

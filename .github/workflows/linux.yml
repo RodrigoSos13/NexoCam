@@ -1,0 +1,24 @@
+name: Linux
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.11', '3.12', '3.13', '3.14']
+    env:
+      QT_QPA_PLATFORM: offscreen
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - run: python -m pip install -e './linux[dev]'
+      - run: python -m ruff check linux
+      - run: python -m ruff format --check linux
+      - run: python -m pytest linux/tests
+      - run: python -m build linux

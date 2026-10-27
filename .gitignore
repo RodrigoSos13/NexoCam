@@ -1,0 +1,32 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+build/
+dist/
+.gradle/
+local.properties
+*.jks
+*.keystore
+.env
+.env.*
+!.env.example
+
+# Configurações locais de ferramentas e credenciais
+.aws/
+.codex/
+.agents/
+.idea/
+.vscode/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Diagnósticos e capturas locais
+*.log
+core
+core.*
+recordings/
+captures/
