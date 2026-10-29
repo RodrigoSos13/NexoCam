@@ -13,7 +13,7 @@
     <string name="disconnected">Desconectado</string>
     <string name="connecting">Conectando com verificação TLS…</string>
     <string name="authenticating">Autenticando sessão…</string>
-    <string name="streaming">Transmitindo • JPEG 640 × 480 • limite 15 FPS</string>
+    <string name="streaming">Transmitindo • JPEG • limite 15 FPS</string>
     <string name="reconnecting">Conexão perdida. Tentando reconectar…</string>
     <string name="connection_error">Conexão recusada ou indisponível. Confira IP, firewall, identidade TLS e validade do segredo no computador.</string>
     <string name="invalid_pairing">Informe IPv4, impressão digital e segredo exatamente como exibidos no computador.</string>
@@ -26,4 +26,10 @@
     <string name="scan_prompt">Aponte para o QR Code exibido no seu computador</string>
     <string name="qr_loaded">Dados preenchidos. Confira o computador e toque em Conectar e transmitir.</string>
     <string name="invalid_qr">QR inválido ou incompatível. Escaneie o código de pareamento do NexoCam.</string>
+    <string name="connection_details">Conexão</string>
+    <string name="close_connection_details">Concluir</string>
+    <string name="disconnect_to_edit">Desconecte para alterar os dados da conexão.</string>
+    <string name="switch_camera_short">Alternar câmera</string>
+    <string name="transmitted_preview">Prévia do quadro preparado para transmissão</string>
+    <string name="qr_confirmation_failed">Dados lidos. Não foi possível confirmar a leitura no computador. Confira a rede e conecte quando estiver pronto.</string>
 </resources>

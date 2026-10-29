@@ -28,6 +28,7 @@ class CameraManager(
         view: PreviewView,
         front: Boolean,
         ready: () -> Boolean,
+        portrait: () -> Boolean,
         frame: (ByteArray) -> Unit,
         error: () -> Unit,
     ) {
@@ -61,7 +62,7 @@ class CameraManager(
                         val now = System.nanoTime()
                         if (!stopped.get() && ready() && now - last >= 66_666_667L) {
                             last = now
-                            frame(processor.jpeg(image))
+                            frame(processor.jpeg(image, portrait()))
                         }
                     } catch (_: Exception) {
                         error()

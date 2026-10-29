@@ -22,6 +22,9 @@ class ConnectionManager(
     private val scope: CoroutineScope,
     private val status: (Int) -> Unit,
 ) {
+    @Volatile var portrait = false
+        private set
+
     @Volatile private var socket: WebSocket? = null
 
     @Volatile var streaming = false
@@ -122,7 +125,8 @@ class ConnectionManager(
                                                 .put("width", 640)
                                                 .put("height", 480)
                                                 .put("fps", 15)
-                                                .put("codec", "jpeg"),
+                                                .put("codec", "jpeg")
+                                                .put("orientation_control", true),
                                         )
                                     }
                                     "config" -> {
@@ -141,16 +145,23 @@ class ConnectionManager(
                                             obj.getString("type") == "state" && obj.getString("state") == "streaming",
                                         )
                                         stage = "streaming"
+                                        portrait = obj.optBoolean("portrait", false)
                                         streaming = true
                                         status(R.string.streaming)
                                     }
                                     "streaming" -> {
-                                        require(
-                                            obj.getString("type") == "state" &&
-                                                obj.getString("state") == "frame" &&
-                                                obj.getLong("sequence") == sequence.get(),
-                                        )
-                                        inFlight.set(false)
+                                        require(obj.getString("type") == "state")
+                                        when (obj.getString("state")) {
+                                            "frame" -> {
+                                                require(obj.getLong("sequence") == sequence.get())
+                                                inFlight.set(false)
+                                            }
+                                            "format" -> {
+                                                require(obj.get("portrait") is Boolean)
+                                                portrait = obj.getBoolean("portrait")
+                                            }
+                                            else -> error("Estado inesperado")
+                                        }
                                     }
                                     else -> error("Controle inesperado")
                                 }

@@ -1,5 +1,37 @@
 # Histórico
 
+## Android 0.2.5-dev — 2026-10-29
+
+- Corrige formato: Horizontal/Vertical agora aplica rotação real dos pixels, em vez de só alterar o canvas.
+- Prévia local usa o mesmo processamento JPEG mesmo antes de conectar; Horizontal é o padrão inicial.
+- Testes de rotação do sensor e troca de proporção.
+
+
+## Android 0.2.4-dev / formato ao vivo — 2026-10-29
+
+- Formato Horizontal (padrão) ou Vertical selecionável no desktop durante a transmissão.
+- Prévia e JPEG em 640×480 ou 480×640, conforme o formato escolhido.
+- Webcam virtual mantém 640×480 e acomoda retrato com barras para preservar a sessão do consumidor.
+- Painel lateral simplificado e botão Android de alternar câmera por ícone acessível.
+
+
+## Interface desktop — 2026-10-29
+
+- Tema grafite com destaque verde, identidade visual e painel lateral de conexão.
+- Prévia expansível sem recorte e métricas de saída separadas.
+- Estado da sessão, saída escolhida e ações principais organizadas em áreas próprias.
+- Diálogo QR revisado, com rolagem e preenchimento manual recolhido.
+- Seleção de webcam preservada ao atualizar diagnósticos; câmera física continua recusada.
+
+
+## Android 0.2.3-dev / interface — 2026-10-29
+
+- Prévia como área principal; dados de conexão em popup editável quando desconectado.
+- Durante a transmissão, exibe o JPEG preparado para envio, com rotação e proporção.
+- Confirmação autenticada da leitura do QR fecha seu diálogo no computador sem iniciar vídeo.
+- Controles de escanear, alternar câmera, conectar/desconectar e desativar próximos à prévia.
+
+
 ## Android 0.2.2-dev / pareamento QR — 2026-10-29
 
 - QR local com seleção de interface/IP no receptor, sem salvar imagens.

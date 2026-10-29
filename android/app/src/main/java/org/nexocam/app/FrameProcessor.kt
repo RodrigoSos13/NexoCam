@@ -15,7 +15,10 @@ import androidx.core.graphics.createBitmap
 import java.io.ByteArrayOutputStream
 
 class FrameProcessor {
-    fun jpeg(image: ImageProxy): ByteArray {
+    fun jpeg(
+        image: ImageProxy,
+        portrait: Boolean = false,
+    ): ByteArray {
         val width = image.width
         val height = image.height
         val nv21 = ByteArray(width * height * 3 / 2)
@@ -46,23 +49,26 @@ class FrameProcessor {
         val bitmap =
             BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
                 ?: error("Falha ao converter YUV")
-        val matrix = Matrix().apply { postRotate(image.imageInfo.rotationDegrees.toFloat()) }
+        val degrees = transmissionRotation(width, height, image.imageInfo.rotationDegrees, portrait)
+        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
         val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
-        val output = createBitmap(640, 480)
+        val outputWidth = if (portrait) 480 else 640
+        val outputHeight = if (portrait) 640 else 480
+        val output = createBitmap(outputWidth, outputHeight)
         try {
             val canvas = Canvas(output)
             canvas.drawColor(Color.BLACK)
-            val scale = minOf(640f / rotated.width, 480f / rotated.height)
+            val scale = minOf(outputWidth.toFloat() / rotated.width, outputHeight.toFloat() / rotated.height)
             val w = rotated.width * scale
             val h = rotated.height * scale
             canvas.drawBitmap(
                 rotated,
                 null,
                 RectF(
-                    (640 - w) / 2,
-                    (480 - h) / 2,
-                    (640 + w) / 2,
-                    (480 + h) / 2,
+                    (outputWidth - w) / 2,
+                    (outputHeight - h) / 2,
+                    (outputWidth + w) / 2,
+                    (outputHeight + h) / 2,
                 ),
                 Paint(Paint.FILTER_BITMAP_FLAG),
             )

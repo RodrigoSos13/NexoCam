@@ -40,3 +40,31 @@ apropriado, seguido de nova sessão. O receptor nunca deve rodar como root.
 Wayland/X11 não controlam a escrita V4L2. Flatpak, sandbox de navegador e portais
 podem afetar a visibilidade da câmera. Inicie a saída antes de abrir o consumidor
 quando usar exclusive_caps=1. Não há compatibilidade de consumidores comprovada.
+
+## Interface desktop atualizada
+
+O painel lateral reúne origem, saída de vídeo e ações. Selecione a webcam virtual
+para usar o vídeo no OBS; Somente prévia exibe a imagem apenas no NexoCam. Iniciar
+sessão abre a recepção; Conectar celular · QR Code reabre o pareamento; Encerrar
+sessão libera os recursos. Diagnósticos fica no cabeçalho. Em janelas menores,
+o painel lateral e o diálogo de pareamento têm rolagem. A prévia se ajusta à janela
+sem recortar ou alterar os quadros transmitidos. Métricas são da saída e incluem
+quadros neutros/repetidos, não FPS de captura do celular.
+
+Esta atualização altera somente o receptor Linux. Feche a instância antiga e
+execute `.venv/bin/nexocam` novamente para carregar o tema novo.
+
+## Formato horizontal ou vertical
+
+Formato fica no painel lateral. Horizontal é o padrão ao abrir o receptor; você
+pode selecionar Vertical antes ou durante uma transmissão Android. O APK deve
+ser 0.2.4-dev ou posterior. O fluxo continua na mesma conexão e a prévia muda para
+640×480 ou 480×640. O seletor gira os pixels quando necessário para produzir o formato escolhido,
+sem esticar a imagem. Para manter a cena em pé, posicione o aparelho de acordo
+com o formato (deitado para Horizontal, em pé para Vertical).
+
+A webcam virtual continua anunciando 640×480 durante a sessão. O vídeo vertical
+é acomodado com barras laterais para evitar reabrir o dispositivo enquanto OBS
+ou outro consumidor o utiliza. Para uma composição vertical no OBS, ajuste a cena
+ou recorte as barras. Ainda não há troca ao vivo das dimensões V4L2 anunciadas.
+O modo de teste sintético conserva o formato horizontal.

@@ -111,3 +111,44 @@ Validação manual: reinicie o receptor, escolha a interface do hotspot e escane
 o QR com o novo APK. Confira preenchimento, cancelamento da leitura, retorno à
 prévia, confirmação de conexão e segredo vencido. Teste também escanear enquanto
 a prévia CameraX está ativa para confirmar liberação da câmera no aparelho.
+
+## Interface e confirmação QR — 29/10/2026 (Android 0.2.3-dev)
+
+26 testes Linux passaram após incluir confirmação autenticada sem sessão de
+vídeo, ausência de confirmação para credencial inválida e fechamento/reabertura
+do diálogo QR por sinal Qt. Ruff, formatação e git diff --check aprovados.
+Android: ktlintCheck, 6 unitários, lintDebug e assembleDebug passaram. A nova tela
+centraliza a prévia e coloca dados em popup; durante transmissão a representação
+é decodificada do JPEG preparado para envio, no executor da câmera, com StateFlow.
+O fechamento real após leitura, o popup no telefone e o custo da prévia JPEG
+precisam de validação física. APK debug atualizado; release anterior não atualizado.
+
+## Redesign desktop — 29/10/2026
+
+27 testes Linux aprovados, incluindo geração/leitura de QR nos tamanhos de 4 e
+5 pixels por módulo, prévia, início/encerramento e fechamento automático do QR.
+Ruff e formatação aprovados; wheel e sdist gerados, incluindo tema e chevron SVG.
+Revisão visual por capturas Qt offscreen em 1160×760 e 920×620, com imagem
+sintética e estado vazio; diálogo QR revisado com endereço/credenciais fictícios.
+Ainda requer avaliação visual na sessão KDE/Wayland real e teste do usuário com
+vídeo do celular. O protocolo, resolução e limites de transmissão foram mantidos.
+
+## Formato ao vivo e controles — 29/10/2026 (Android 0.2.4-dev)
+
+28 testes Linux aprovados, com negociação explícita dos dois tamanhos, rejeição
+de retrato sem capacidade negociada, proporção/barras na saída virtual e troca
+Horizontal/Vertical dentro da mesma sessão TLS. Mudanças de formato durante a
+negociação são aplicadas no estado inicial, sem enviar comandos prematuros.
+Android: ktlintCheck, 6 testes unitários, lintDebug e assembleDebug aprovados.
+APK instalado via ADB e versão 0.2.4-dev confirmada (versionCode6).
+Ainda é necessário testar fisicamente a troca ao vivo no celular/OBS, rotação,
+proporção e consumo de CPU; a automação não comprova esse comportamento no driver.
+
+## Correção da orientação de pixels — Android 0.2.5-dev
+
+10 testes Android aprovados (4 novos de rotação): modo horizontal com sensor
+90/270, aparelho em paisagem, troca para retrato e todas as combinações dos
+sensores 0/90/180/270 com buffers 640×480 e 480×640. Metadados inválidos recusados.
+ktlintCheck, lintDebug e assembleDebug aprovados. A prévia local também processa
+JPEG a até 15 FPS sem enviar antes de conectar. Avaliação física da orientação,
+consumo de CPU e resposta ao seletor permanece necessária. Release não atualizado.

@@ -29,5 +29,5 @@ publique detalhes exploráveis ou credenciais em issues públicas.
 
 Pareamento por QR: o código contém o segredo temporário, é gerado em memória e
 não deve ser publicado. Escaneie somente a tela do computador escolhido. O leitor
-Android é interno, offline, não grava fotos e apenas preenche os campos; a conexão
-continua exigindo confirmação e validação TLS. QR não altera regras de firewall.
+Android é interno, offline, não grava fotos, preenche os campos e envia uma confirmação curta autenticada por
+TLS para fechar o QR no computador. Iniciar vídeo continua exigindo confirmação. QR não altera regras de firewall.

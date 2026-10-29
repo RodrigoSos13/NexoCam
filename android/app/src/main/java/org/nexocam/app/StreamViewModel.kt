@@ -1,8 +1,13 @@
 package org.nexocam.app
 
 import android.app.Application
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.TimeoutCancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -10,6 +15,38 @@ import kotlinx.coroutines.launch
 class StreamViewModel(
     application: Application,
 ) : AndroidViewModel(application) {
+    private val mutableTransmitted = MutableStateFlow<Bitmap?>(null)
+    val transmitted = mutableTransmitted.asStateFlow()
+    private var confirmation: Job? = null
+
+    fun acknowledgeQr(pairing: Pairing) {
+        confirmation?.cancel()
+        confirmation =
+            viewModelScope.launch {
+                try {
+                    if (!confirmQrRead(pairing)) mutableStatus.value = R.string.qr_confirmation_failed
+                } catch (
+                    _: TimeoutCancellationException,
+                ) {
+                    mutableStatus.value = R.string.qr_confirmation_failed
+                } catch (
+                    error: CancellationException,
+                ) {
+                    throw error
+                } catch (_: Exception) {
+                    mutableStatus.value = R.string.qr_confirmation_failed
+                }
+            }
+    }
+
+    fun frame(jpeg: ByteArray) {
+        connection.send(jpeg)
+        if (mutableCamera.value) {
+            val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
+            if (mutableCamera.value) mutableTransmitted.value = bitmap
+        }
+    }
+
     private val mutableStatus = MutableStateFlow(R.string.disconnected)
     val status = mutableStatus.asStateFlow()
     private val mutableCamera = MutableStateFlow(false)
@@ -21,6 +58,7 @@ class StreamViewModel(
     val connection =
         ConnectionManager(viewModelScope) { value ->
             mutableStatus.value = value
+            if (value != R.string.streaming) mutableTransmitted.value = null
             if (value == R.string.connection_error) mutableConnecting.value = false
         }
 
@@ -51,6 +89,8 @@ class StreamViewModel(
     }
 
     fun disconnect() {
+        confirmation?.cancel()
+        mutableTransmitted.value = null
         connection.disconnect()
         mutableConnecting.value = false
         mutableStatus.value = R.string.disconnected

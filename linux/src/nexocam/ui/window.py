@@ -1,13 +1,15 @@
 import asyncio
 import json
 import sys
+from pathlib import Path
 from threading import Event, Lock
 
 from PySide6.QtCore import Qt, QThread, QTimer, Signal
-from PySide6.QtGui import QAction, QCloseEvent, QImage, QPixmap
+from PySide6.QtGui import QAction, QCloseEvent, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
+    QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -15,6 +17,8 @@ from PySide6.QtWidgets import (
     QMenu,
     QMessageBox,
     QPushButton,
+    QScrollArea,
+    QSizePolicy,
     QSystemTrayIcon,
     QVBoxLayout,
     QWidget,
@@ -23,6 +27,7 @@ from PySide6.QtWidgets import (
 from nexocam.diagnostics.environment import report
 from nexocam.network.server import StreamServer
 from nexocam.security.identity import default_identity
+from nexocam.ui.theme import STYLESHEET
 from nexocam.video.stream import run_pattern
 
 
@@ -31,10 +36,12 @@ class Worker(QThread):
     diagnostic = Signal(object)
     status_changed = Signal(str)
     pairing_ready = Signal(str, str, int)
+    pairing_confirmed = Signal()
 
     def __init__(self, device=None, diagnostics=False, receive=False):
         super().__init__()
         self.stop = Event()
+        self.portrait = Event()
         self.device = device
         self.diagnostics = diagnostics
         self.receive = receive
@@ -61,6 +68,8 @@ class Worker(QThread):
                     publish=self.publish,
                     status=self.status_changed.emit,
                     ready=self.pairing_ready.emit,
+                    paired=self.pairing_confirmed.emit,
+                    portrait=self.portrait.is_set,
                 )
                 asyncio.run(server.run(self.stop))
             else:
@@ -69,47 +78,202 @@ class Worker(QThread):
             self.failed.emit(f"Não foi possível concluir a operação: {exc}")
 
 
+def label(text, name="muted"):
+    widget = QLabel(text)
+    widget.setObjectName(name)
+    widget.setTextFormat(Qt.TextFormat.PlainText)
+    return widget
+
+
+def app_icon():
+    for path in (
+        Path(__file__).resolve().parents[3] / "resources/nexocam.svg",
+        Path(sys.prefix) / "share/icons/hicolor/scalable/apps/nexocam.svg",
+    ):
+        if path.exists():
+            return QIcon(str(path))
+    return QIcon.fromTheme("camera-web")
+
+
+class VideoPreview(QLabel):
+    """Redimensiona só a apresentação, preservando os pixels usados na saída V4L2."""
+
+    def __init__(self):
+        super().__init__()
+        self.source = None
+        self.setObjectName("preview")
+        self.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.setMinimumSize(320, 240)
+        self.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Ignored)
+        self.setTextFormat(Qt.TextFormat.PlainText)
+        self.setWordWrap(True)
+
+    def setPixmap(self, pixmap):
+        self.source = pixmap
+        self.render_frame()
+
+    def setText(self, text):
+        self.source = None
+        super().setText(text)
+
+    def render_frame(self):
+        if self.source is not None:
+            super().setPixmap(
+                self.source.scaled(
+                    self.size(),
+                    Qt.AspectRatioMode.KeepAspectRatio,
+                    Qt.TransformationMode.SmoothTransformation,
+                )
+            )
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self.render_frame()
+
+
 class Window(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("NexoCam")
-        self.resize(900, 720)
+        self.resize(1160, 760)
+        self.setMinimumSize(900, 600)
+        self.setWindowIcon(app_icon())
+        self.setStyleSheet(STYLESHEET)
         self.worker = None
         self.checker = None
         self.closing = False
         self.show_report = False
         self.report_dialog = None
-        self.status = QLabel("NexoCam • receptor Android e teste local")
-        self.preview = QLabel("Inicie a prévia para verificar a imagem.")
-        self.preview.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.preview.setMinimumSize(640, 480)
+        self.status = label("Inicie uma sessão para conectar seu Android.", "statusText")
+        self.status.setWordWrap(True)
+        self.preview = VideoPreview()
+        self.preview.setText(
+            "Sua câmera começa aqui.\n\nInicie uma sessão e escaneie o QR Code no Android."
+        )
         self.devices = QComboBox()
-        self.devices.addItem("Somente prévia — sem webcam virtual", None)
+        self.devices.addItem("Somente prévia", None)
+        self.devices.setToolTip(
+            "Selecione uma webcam virtual para disponibilizar vídeo no OBS e em outros aplicativos."
+        )
         self.mode = QComboBox()
-        self.mode.addItem("Receber do Android • TLS / JPEG", True)
-        self.mode.addItem("Teste sintético local", False)
-        self.start = QPushButton("Iniciar")
+        self.mode.addItem("Receber do Android", True)
+        self.mode.addItem("Teste de imagem", False)
+        self.orientation = QComboBox()
+        self.orientation.addItem("Horizontal", False)
+        self.orientation.addItem("Vertical", True)
+        self.orientation.setToolTip(
+            "Troca ao vivo. Na webcam virtual 640×480, o vídeo vertical tem barras laterais."
+        )
+        self.orientation.currentIndexChanged.connect(self.update_orientation)
+        self.mode.currentIndexChanged.connect(
+            lambda: self.orientation.setEnabled(bool(self.mode.currentData()))
+        )
+        self.start = QPushButton("Iniciar sessão")
+        self.start.setObjectName("primary")
         self.start.clicked.connect(self.begin)
-        self.stop = QPushButton("Interromper")
+        self.stop = QPushButton("Encerrar sessão")
+        self.stop.setObjectName("stop")
         self.stop.setEnabled(False)
+        self.stop.setVisible(False)
         self.stop.clicked.connect(self.end)
-        self.diagnostics = QPushButton("Diagnósticos / atualizar dispositivos")
+        self.diagnostics = QPushButton("Diagnósticos")
+        self.diagnostics.setObjectName("ghost")
         self.diagnostics.clicked.connect(lambda: self.check(show_report=True))
         self.pairing_info = None
-        self.pairing_button = QPushButton("Dados de pareamento")
+        self.pairing_button = QPushButton("Conectar celular · QR Code")
         self.pairing_button.setEnabled(False)
         self.pairing_button.clicked.connect(self.show_pairing)
-        self.metrics = QLabel("640 × 480 • meta: 15 FPS • RGB")
-        title = QLabel("NexoCam")
-        title.setStyleSheet("font-size: 28px; font-weight: bold; color: #58d6c7")
+        self.metrics = label("FPS de saída · aguardando sessão")
+        self.fps_value = label("—", "statValue")
+        self.frames_value = label("0", "statValue")
+        self.device_hint = label("Escolha uma saída para usar no OBS.")
+        self.device_hint.setWordWrap(True)
+        self.devices.currentIndexChanged.connect(self.update_output_hint)
+        self.badge = label("Pronto para iniciar", "stateBadge")
         root = QWidget()
+        root.setObjectName("root")
         layout = QVBoxLayout(root)
-        for widget in (title, self.status, self.mode, self.preview, self.metrics, self.devices):
-            layout.addWidget(widget)
-        buttons = QHBoxLayout()
-        for button in (self.start, self.stop, self.pairing_button, self.diagnostics):
-            buttons.addWidget(button)
-        layout.addLayout(buttons)
+        layout.setContentsMargins(28, 24, 28, 18)
+        layout.setSpacing(22)
+        header = QHBoxLayout()
+        logo = QLabel()
+        logo.setPixmap(app_icon().pixmap(42, 42))
+        header.addWidget(logo)
+        brand = QVBoxLayout()
+        brand.setSpacing(1)
+        brand.addWidget(label("NexoCam", "brand"))
+        brand.addWidget(label("Seu Android. Sua webcam.", "subtitle"))
+        header.addLayout(brand)
+        header.addStretch()
+        header.addWidget(self.badge)
+        header.addSpacing(12)
+        header.addWidget(self.diagnostics)
+        layout.addLayout(header)
+        content = QHBoxLayout()
+        content.setSpacing(20)
+        video_card = QFrame()
+        video_card.setObjectName("videoCard")
+        video_layout = QVBoxLayout(video_card)
+        video_layout.setContentsMargins(18, 18, 18, 18)
+        video_layout.setSpacing(14)
+        video_header = QHBoxLayout()
+        video_header.addWidget(label("Prévia da câmera", "sectionTitle"))
+        video_header.addStretch()
+        self.frame_format = label("640 × 480", "eyebrow")
+        video_header.addWidget(self.frame_format)
+        video_layout.addLayout(video_header)
+        video_layout.addWidget(self.preview, 1)
+        stats = QHBoxLayout()
+        for title, value in (
+            ("RESOLUÇÃO DE SAÍDA", label("640 × 480", "statValue")),
+            ("FPS DE SAÍDA", self.fps_value),
+            ("QUADROS DE SAÍDA", self.frames_value),
+        ):
+            stat = QVBoxLayout()
+            stat.setSpacing(4)
+            stat.addWidget(label(title, "eyebrow"))
+            stat.addWidget(value)
+            stats.addLayout(stat, 1)
+        video_layout.addLayout(stats)
+        video_layout.addWidget(self.metrics)
+        content.addWidget(video_card, 1)
+        panel = QFrame()
+        panel.setObjectName("panel")
+        controls = QVBoxLayout(panel)
+        controls.setContentsMargins(22, 22, 22, 22)
+        controls.setSpacing(12)
+        controls.addWidget(label("Conexão", "sectionTitle"))
+        controls.addWidget(label("Origem do vídeo", "eyebrow"))
+        controls.addWidget(self.mode)
+        controls.addWidget(label("Saída de vídeo", "eyebrow"))
+        controls.addWidget(self.devices)
+        controls.addWidget(self.device_hint)
+        controls.addWidget(label("Formato", "eyebrow"))
+        controls.addWidget(self.orientation)
+        controls.addSpacing(8)
+        controls.addWidget(self.start)
+        controls.addWidget(self.stop)
+        controls.addWidget(self.pairing_button)
+        controls.addStretch()
+        status_card = QFrame()
+        status_card.setObjectName("statusCard")
+        status_layout = QVBoxLayout(status_card)
+        status_layout.setContentsMargins(14, 14, 14, 14)
+        status_layout.addWidget(label("ESTADO DA SESSÃO", "eyebrow"))
+        status_layout.addWidget(self.status)
+        controls.addWidget(status_card)
+        side = QScrollArea()
+        side.setWidgetResizable(True)
+        side.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        side.setMinimumWidth(310)
+        side.setMaximumWidth(340)
+        side.setWidget(panel)
+        content.addWidget(side)
+        layout.addLayout(content, 1)
+        footer = QHBoxLayout()
+
+        footer.addStretch()
+        self.setToolTip("Minimizar mantém a sessão ativa. Fechar encerra a transmissão.")
         self.setCentralWidget(root)
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.refresh)
@@ -130,6 +294,23 @@ class Window(QMainWindow):
             self.tray.show()
         QTimer.singleShot(0, self.check)
 
+    def update_orientation(self):
+        if self.worker:
+            if self.orientation.currentData():
+                self.worker.portrait.set()
+            else:
+                self.worker.portrait.clear()
+
+    def update_output_hint(self):
+        self.device_hint.setText("Para usar no OBS, selecione uma webcam virtual.")
+        self.device_hint.setVisible(self.devices.currentData() is None)
+
+    def set_badge(self, text, state="idle"):
+        self.badge.setText(text)
+        self.badge.setProperty("state", state)
+        self.badge.style().unpolish(self.badge)
+        self.badge.style().polish(self.badge)
+
     def check(self, show_report=False):
         if self.checker is not None:
             return
@@ -142,11 +323,16 @@ class Window(QMainWindow):
         self.checker.start()
 
     def checked(self, result):
+        selected = self.devices.currentData()
         self.devices.clear()
-        self.devices.addItem("Somente prévia — sem webcam virtual", None)
+        self.devices.addItem("Somente prévia", None)
         for device in result["devices"]:
             if device["writable"]:
                 self.devices.addItem(f"{device['label']} ({device['path']})", device["path"])
+        index = self.devices.findData(selected)
+        if index >= 0:
+            self.devices.setCurrentIndex(index)
+        self.update_output_hint()
         self.diagnostics.setToolTip(json.dumps(result, ensure_ascii=False, indent=2))
         if not result["ready"] and self.worker is None:
             self.status.setText("Webcam virtual indisponível. A prévia local está disponível.")
@@ -177,12 +363,16 @@ class Window(QMainWindow):
         device = self.devices.currentData()
         receiving = self.mode.currentData()
         self.worker = Worker(device, receive=receiving)
+        self.update_orientation()
         self.worker.status_changed.connect(self.status.setText)
         self.worker.pairing_ready.connect(self.paired)
+        self.worker.pairing_confirmed.connect(self.close_pairing)
         self.mode.setEnabled(False)
         self.worker.failed.connect(self.error)
         self.worker.finished.connect(self.finished)
         self.start.setEnabled(False)
+        self.start.setVisible(False)
+        self.stop.setVisible(True)
         self.devices.setEnabled(False)
         self.stop.setEnabled(True)
         self.diagnostics.setEnabled(False)
@@ -191,12 +381,17 @@ class Window(QMainWindow):
             if receiving
             else "Teste sintético em execução" + (" • webcam virtual" if device else " • prévia")
         )
+        self.set_badge("Sessão em execução", "active")
         self.worker.start()
 
     def paired(self, fingerprint, token, port):
         self.pairing_info = (fingerprint, token, port)
         self.pairing_button.setEnabled(True)
         self.show_pairing()
+
+    def close_pairing(self):
+        if self.report_dialog and self.report_dialog.windowTitle() == "Pareamento local seguro":
+            self.report_dialog.close()
 
     def show_pairing(self):
         if not self.pairing_info or self.closing:
@@ -208,12 +403,24 @@ class Window(QMainWindow):
         fingerprint, token, port = self.pairing_info
         dialog = QDialog(self)
         dialog.setWindowTitle("Pareamento local seguro")
-        layout = QVBoxLayout(dialog)
-        instructions = QLabel(
-            f"No Android, toque em Escanear QR Code e aponte para esta tela. Porta {port}.\n"
-            "Use uma rede local confiável. O segredo vale 5 minutos para novas conexões.\n"
-            "Para revogar ou gerar outro segredo, interrompa e reinicie o receptor.\n"
-            "Não compartilhe fotos desta tela ou o segredo de pareamento."
+        outer = QVBoxLayout(dialog)
+        outer.setContentsMargins(0, 0, 0, 0)
+        scroll = QScrollArea(dialog)
+        scroll.setWidgetResizable(True)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        body = QWidget()
+        scroll.setWidget(body)
+        outer.addWidget(scroll)
+        dialog.setMinimumWidth(370)
+        dialog.resize(390, min(740, self.screen().availableGeometry().height() - 60))
+        layout = QVBoxLayout(body)
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(14)
+        layout.addWidget(label("CONECTAR DISPOSITIVO", "eyebrow"))
+        layout.addWidget(label("Conecte seu Android", "sectionTitle"))
+        instructions = label(
+            "No NexoCam Android, toque em Escanear QR Code.\n"
+            "A conexão de vídeo começa quando você confirmar no celular."
         )
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
@@ -235,12 +442,13 @@ class Window(QMainWindow):
         addresses.sort(
             key=lambda item: (item[0].startswith(("docker", "br-", "veth", "virbr")), item[0])
         )
-        layout.addWidget(QLabel("Endereço da rede conectada ao celular:"))
+        layout.addWidget(label("REDE DO COMPUTADOR", "eyebrow"))
         address_picker = QComboBox()
         for name, address in addresses:
             address_picker.addItem(f"{name} — {address}", address)
         layout.addWidget(address_picker)
         qr_label = QLabel()
+        qr_label.setObjectName("qr")
         qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(qr_label)
         from nexocam.security.qr import payload, pixels
@@ -252,7 +460,7 @@ class Window(QMainWindow):
                     "Nenhum IPv4 ativo encontrado. Conecte o computador à rede e reabra o pareamento."
                 )
                 return
-            data = pixels(payload(host, fingerprint, token, port))
+            data = pixels(payload(host, fingerprint, token, port), box_size=4)
             image = QImage(
                 data.data,
                 data.shape[1],
@@ -267,20 +475,27 @@ class Window(QMainWindow):
         manual = QWidget()
         manual_layout = QVBoxLayout(manual)
         manual.setVisible(False)
-        toggle = QPushButton("Mostrar / ocultar dados para preenchimento manual")
+        security_note = label(
+            "Válido por 5 minutos para novas conexões.\nEste código contém seu segredo de acesso; não compartilhe."
+        )
+        security_note.setWordWrap(True)
+        layout.addWidget(security_note)
+        toggle = QPushButton("Preencher manualmente")
+        toggle.setObjectName("ghost")
         toggle.clicked.connect(lambda: manual.setVisible(not manual.isVisible()))
         layout.addWidget(toggle)
         layout.addWidget(manual)
-        for label, value in (
+        for field_label, value in (
             ("Impressão digital TLS", fingerprint),
             ("Segredo temporário", token),
         ):
-            manual_layout.addWidget(QLabel(label))
+            manual_layout.addWidget(QLabel(field_label))
             field = QLineEdit(value)
             field.setReadOnly(True)
-            field.setMinimumWidth(560)
+            field.setMinimumWidth(260)
             manual_layout.addWidget(field)
-        done = QPushButton("Fechar")
+        done = QPushButton("Concluir")
+        done.setObjectName("primary")
         done.clicked.connect(dialog.close)
         layout.addWidget(done)
         self.report_dialog = dialog
@@ -291,6 +506,7 @@ class Window(QMainWindow):
             self.worker.stop.set()
             self.stop.setEnabled(False)
             self.status.setText("Encerrando e liberando a webcam...")
+            self.set_badge("Encerrando")
 
     def finished(self):
         self.worker.deleteLater()
@@ -301,8 +517,17 @@ class Window(QMainWindow):
         if self.report_dialog:
             self.report_dialog.close()
             self.report_dialog = None
-        self.preview.setText("Transmissão interrompida.")
+        self.preview.setText(
+            "Sessão encerrada.\n\nSua câmera estará aqui quando você conectar novamente."
+        )
+        self.fps_value.setText("—")
+        self.metrics.setText("Saída de vídeo interrompida")
+        if self.badge.property("state") != "error":
+            self.set_badge("Pronto para iniciar")
+            self.status.setText("Sessão encerrada. Você pode iniciar uma nova conexão.")
         self.start.setEnabled(True)
+        self.start.setVisible(True)
+        self.stop.setVisible(False)
         self.devices.setEnabled(True)
         self.diagnostics.setEnabled(self.checker is None)
         self.stop.setEnabled(False)
@@ -311,15 +536,22 @@ class Window(QMainWindow):
 
     def error(self, message):
         self.status.setText(message)
+        self.set_badge("Atenção", "error")
 
     def refresh(self):
         value = self.worker.take() if self.worker else None
         if value is None:
             return
         frame, count, fps = value
-        image = QImage(frame.data, 640, 480, frame.strides[0], QImage.Format.Format_RGB888).copy()
+        height, width = frame.shape[:2]
+        image = QImage(
+            frame.data, width, height, frame.strides[0], QImage.Format.Format_RGB888
+        ).copy()
+        self.frame_format.setText(f"{width} × {height}")
         self.preview.setPixmap(QPixmap.fromImage(image))
-        self.metrics.setText(f"640 × 480 • {fps:.1f} FPS de saída • {count} quadros")
+        self.fps_value.setText(f"{fps:.1f}")
+        self.frames_value.setText(f"{count:,}".replace(",", "."))
+        self.metrics.setText("Saída · meta de 15 FPS")
 
     def closeEvent(self, event: QCloseEvent):
         self.closing = True
@@ -336,11 +568,6 @@ def launch():
     app = QApplication(sys.argv)
     app.setApplicationName("NexoCam")
     app.setStyle("Fusion")
-    app.setStyleSheet(
-        "QWidget { background: #171e29; color: #e8eef6; font-size: 14px; }"
-        "QPushButton, QComboBox { padding: 10px; background: #29384b; }"
-        "QPushButton:disabled { color: #8190a3; }"
-    )
     window = Window()
     window.show()
     return app.exec()

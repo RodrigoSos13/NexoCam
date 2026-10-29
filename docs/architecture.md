@@ -76,3 +76,34 @@ sem download de modelos ou Google Play Services. O leitor interno não é export
 não grava a foto e não conecta por conta própria. O parser limita tamanho/versão,
 porta e campos; o certificado fixado continua obrigatório antes de enviar segredo.
 Fontes: https://github.com/journeyapps/zxing-android-embedded e https://pypi.org/project/qrcode/.
+
+## Interface e confirmação QR (Android 0.2.3-dev)
+
+Após escanear, uma conexão curta TLS autentica com hello purpose=pairing. O
+servidor emite sinal Qt para fechar apenas o diálogo de pareamento, confirma e
+encerra sem reservar vídeo. Android cancela essa tarefa ao desconectar/sair e
+fecha cliente/socket em finally. Não há conexão automática de vídeo. Popup de
+conexão é editável somente desconectado; credenciais permanecem apenas em memória.
+Prévia ocupa a área flexível da tela. Durante transmissão, Bitmap decodificado do
+JPEG preparado é publicado via StateFlow (sem eventos por quadro) e exibido sem
+recorte ou espelhamento adicional. Antes de transmitir, CameraX mostra prévia local.
+
+## Apresentação desktop
+
+Tema Qt centralizado em ui/theme.py, sem toolkit web ou novas dependências.
+VideoPreview mantém um único QPixmap de origem e redimensiona apenas a exibição
+preservando proporção. QSS e chevron SVG local acompanham o pacote Python; não
+há fontes ou imagens remotas. Painéis com rolagem mantêm controles acessíveis
+em janelas compactas. Badges representam execução do worker e erros; o estado
+detalhado continua vindo da sessão. Nenhum indicador implica compatibilidade
+ou medição de captura que não tenha sido realizada.
+
+## Formato ao vivo
+
+Seletor desktop altera Event no worker; o servidor consulta esse estado e envia
+um controle somente quando muda, após negociação da capacidade orientation_control.
+Android aplica uma flag volátil capturada uma vez por processamento de quadro.
+São permitidos somente dois tamanhos com o mesmo limite de 307200 pixels: 640×480
+e 480×640. JPEG valida dimensões antes/depois de decode. Prévia usa tamanho real;
+video/layout.py acomoda retrato em canvas V4L2 640×480, evitando reset do produtor.
+A saída virtual mantém dimensões fixas; não se promete renegociação com consumidores.

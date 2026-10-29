@@ -11,8 +11,8 @@ android {
         applicationId = "org.nexocam.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 4
-        versionName = "0.2.2-dev"
+        versionCode = 7
+        versionName = "0.2.5-dev"
     }
     buildFeatures { compose = true }
     compileOptions {

@@ -22,9 +22,11 @@ def payload(host: str, fingerprint: str, token: str, port: int = 8765) -> str:
     )
 
 
-def pixels(value: str) -> np.ndarray:
+def pixels(value: str, box_size: int = 5) -> np.ndarray:
     qr = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, border=4)
     qr.add_data(value)
     qr.make(fit=True)
     matrix = np.asarray(qr.get_matrix(), dtype=np.uint8)
-    return np.ascontiguousarray(np.repeat(np.repeat((1 - matrix) * 255, 5, axis=0), 5, axis=1))
+    return np.ascontiguousarray(
+        np.repeat(np.repeat((1 - matrix) * 255, box_size, axis=0), box_size, axis=1)
+    )

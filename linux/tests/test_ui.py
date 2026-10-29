@@ -81,6 +81,12 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
             sleep(0.01)
         assert window.pairing_info is not None
         assert window.pairing_button.isEnabled()
+        assert window.report_dialog.isVisible()
+        window.worker.pairing_confirmed.emit()
+        app.processEvents()
+        assert not window.report_dialog.isVisible()
+        window.show_pairing()
+        assert window.report_dialog.isVisible()
     finally:
         window.close()
         while (window.worker is not None or window.checker is not None) and monotonic() < deadline:

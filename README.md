@@ -10,8 +10,9 @@ reconexão cancelável, descarte de capturas e quadro neutro quando o vídeo par
 O aplicativo Android precisa permanecer visível. A resolução de captura física
 pode variar; o quadro transmitido é ajustado para 640×480 preservando proporção.
 
-**Ainda sem validação ponta a ponta com um celular.** A saída sintética foi vista
-pelo usuário no OBS; isso não comprova câmera Android, Wi-Fi real ou estabilidade.
+**Fluxo com câmera real recebido no OBS confirmado pelo usuário em 29/10/2026.**
+FPS, latência e estabilidade prolongada ainda não foram medidos. A nova interface
+Android 0.2.3-dev e o fechamento automático do QR exigem nova validação no aparelho.
 Pareamento por QR implementado; USB automatizado, descoberta e pareamento persistente estão pendentes.
 
 ## Linux

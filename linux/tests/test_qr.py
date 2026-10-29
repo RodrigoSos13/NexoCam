@@ -6,9 +6,10 @@ import pytest
 from nexocam.security.qr import PREFIX, payload, pixels
 
 
-def test_qr_can_be_decoded_and_contains_only_pairing_fields():
+@pytest.mark.parametrize("box_size", [4, 5])
+def test_qr_can_be_decoded_and_contains_only_pairing_fields(box_size):
     value = payload("192.0.2.10", "a" * 64, "b" * 64)
-    image = pixels(value)
+    image = pixels(value, box_size=box_size)
     decoded, _, _ = cv2.QRCodeDetector().detectAndDecode(image)
     assert decoded == value
     data = json.loads(decoded.removeprefix(PREFIX))

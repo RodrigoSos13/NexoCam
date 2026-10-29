@@ -66,13 +66,24 @@ async def wait_until(predicate):
             await asyncio.sleep(0.01)
 
 
-async def authenticate(ws, token):
+async def authenticate(ws, token, orientation_control=False, before_start=None):
     await ws.send(control("hello", device="Teste sem celular"))
     assert json.loads(await ws.recv())["type"] == "hello"
     await ws.send(control("authenticate", token=token))
     assert json.loads(await ws.recv())["state"] == "authenticated"
-    await ws.send(control("configure", width=640, height=480, fps=15, codec="jpeg"))
+    await ws.send(
+        control(
+            "configure",
+            width=640,
+            height=480,
+            fps=15,
+            codec="jpeg",
+            orientation_control=orientation_control,
+        )
+    )
     assert json.loads(await ws.recv())["type"] == "configure"
+    if before_start:
+        await before_start()
     await ws.send(control("start"))
     assert json.loads(await ws.recv())["state"] == "streaming"
 
@@ -86,7 +97,16 @@ def test_tls_authentication_frames_disconnect_and_reconnect(tmp_path):
         def publish(frame, *_):
             output[:] = [frame]
 
-        server = StreamServer(identity, host="127.0.0.1", port=0, publish=publish)
+        portrait_mode = Event()
+        confirmations = []
+        server = StreamServer(
+            identity,
+            host="127.0.0.1",
+            port=0,
+            publish=publish,
+            paired=lambda: confirmations.append(True),
+            portrait=portrait_mode.is_set,
+        )
         task = asyncio.create_task(server.run(stop))
         try:
             await wait_until(lambda: server.bound_port is not None or task.done())
@@ -124,6 +144,16 @@ def test_tls_authentication_frames_disconnect_and_reconnect(tmp_path):
                 with pytest.raises(ConnectionClosed):
                     await ws.recv()
             server.auth_timeout = 10
+            assert not confirmations
+            async with connect(uri, **kwargs) as ws:
+                await ws.send(control("hello", device="Teste QR", purpose="pairing"))
+                await ws.recv()
+                await ws.send(control("authenticate", token=server.pairing.token))
+                assert json.loads(await ws.recv())["state"] == "authenticated"
+                with pytest.raises(ConnectionClosed):
+                    await ws.recv()
+            assert confirmations == [True]
+            assert server.active is None
             for _ in range(2):
                 async with connect(uri, **kwargs) as ws:
                     await authenticate(ws, server.pairing.token)
@@ -140,6 +170,36 @@ def test_tls_authentication_frames_disconnect_and_reconnect(tmp_path):
                     await ws.send(control("stop"))
                 await wait_until(lambda: server.active is None)
                 await wait_until(lambda: output and np.array_equal(output[-1], neutral()))
+            async with connect(uri, **kwargs) as ws:
+
+                async def change_during_negotiation():
+                    portrait_mode.set()
+                    await asyncio.sleep(0.12)
+
+                await authenticate(
+                    ws,
+                    server.pairing.token,
+                    orientation_control=True,
+                    before_start=change_during_negotiation,
+                )
+                for seq, portrait in ((1, False), (2, True)):
+                    if portrait:
+                        portrait_mode.set()
+                    else:
+                        portrait_mode.clear()
+                    change = json.loads(await asyncio.wait_for(ws.recv(), 3))
+                    assert change["state"] == "format" and change["portrait"] == portrait
+                    frame = np.full(
+                        (640, 480, 3) if portrait else (480, 640, 3), 180, dtype=np.uint8
+                    )
+                    await ws.send(make_packet(seq, frame))
+                    ack = json.loads(await asyncio.wait_for(ws.recv(), 3))
+                    assert ack["state"] == "frame" and ack["sequence"] == seq
+                    await wait_until(
+                        lambda expected=frame.shape: output and output[-1].shape == expected
+                    )
+                await ws.send(control("stop"))
+            await wait_until(lambda: server.active is None)
             server.pairing.deadline = 0
             async with connect(uri, **kwargs) as ws:
                 await ws.send(control("hello", device="Teste"))
@@ -163,3 +223,20 @@ def test_decoder_failure_becomes_protocol_error(monkeypatch):
     monkeypatch.setattr(cv2, "imdecode", fail)
     with pytest.raises(ProtocolError):
         decode(jpeg)
+
+
+def test_portrait_requires_negotiation_and_fits_virtual_output():
+    from nexocam.video.layout import fit_output
+
+    portrait = np.full((640, 480, 3), 200, dtype=np.uint8)
+    packet = make_packet(frame=portrait)
+    with pytest.raises(ProtocolError):
+        unpack_frame(packet, -1)
+    sizes = ((640, 480), (480, 640))
+    _, jpeg = unpack_frame(packet, -1, sizes)
+    decoded = decode(jpeg, sizes)
+    assert decoded.shape == (640, 480, 3)
+    output = fit_output(decoded)
+    assert output.shape == (480, 640, 3)
+    assert np.all(output[:, :140] == 0)
+    assert np.all(output[:, 180:460] > 190)

@@ -42,7 +42,7 @@ def jpeg_size(data: bytes) -> tuple[int, int]:
     raise ProtocolError("Cabeçalho JPEG inválido ou não suportado.")
 
 
-def unpack_frame(data: bytes, previous: int) -> tuple[int, bytes]:
+def unpack_frame(data: bytes, previous: int, allowed_sizes=((640, 480),)) -> tuple[int, bytes]:
     if not HEADER.size < len(data) <= MAX_FRAME_BYTES:
         raise ProtocolError("Tamanho de quadro inválido.")
     magic, version, sequence, _timestamp = HEADER.unpack_from(data)
@@ -51,18 +51,22 @@ def unpack_frame(data: bytes, previous: int) -> tuple[int, bytes]:
     if sequence <= previous:
         raise ProtocolError("Sequência de quadro inválida.")
     jpeg = data[HEADER.size :]
-    if jpeg_size(jpeg) != (640, 480):
-        raise ProtocolError("Dimensões do quadro diferentes de 640×480.")
+    if jpeg_size(jpeg) not in allowed_sizes:
+        raise ProtocolError("Dimensões do quadro não negociadas.")
     return sequence, jpeg
 
 
-def decode(jpeg: bytes) -> np.ndarray:
-    if jpeg_size(jpeg) != (640, 480):
+def decode(jpeg: bytes, allowed_sizes=((640, 480),)) -> np.ndarray:
+    if jpeg_size(jpeg) not in allowed_sizes:
         raise ProtocolError("Dimensões JPEG incompatíveis.")
     try:
         image = cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
     except cv2.error as exc:
         raise ProtocolError("JPEG rejeitado pelo decodificador.") from exc
-    if image is None or image.shape != (480, 640, 3):
+    if (
+        image is None
+        or (image.shape[1], image.shape[0]) not in allowed_sizes
+        or image.shape[2] != 3
+    ):
         raise ProtocolError("Não foi possível decodificar o JPEG.")
     return cv2.cvtColor(image, cv2.COLOR_BGR2RGB)

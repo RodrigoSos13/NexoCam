@@ -83,3 +83,36 @@ O QR contém um segredo e vale o mesmo prazo de cinco minutos da sessão. Não
 publique ou fotografe essa tela. Só escaneie o QR exibido no seu computador.
 Não há alteração de firewall: no hotspot, escolha o novo IPv4 da interface Wi-Fi,
 e qualquer regra limitada à rede anterior precisará ser revista pelo usuário.
+
+## Interface Android 0.2.3-dev
+
+A tela principal prioriza a imagem. O botão Conexão abre um popup com IP,
+fingerprint e segredo; desconecte antes de editar. Concluir fecha o popup e mantém
+as alterações na memória. Escanear QR Code continua disponível na tela principal.
+Após leitura, o app confirma o segredo por TLS e a janela do QR no computador
+fecha automaticamente. Essa confirmação não inicia vídeo: toque em Conectar e
+transmitir. É necessário atualizar o APK e reiniciar o receptor Linux.
+
+Antes da conexão, a prévia é CameraX. Ao transmitir, a imagem exibida vem do JPEG
+preparado para envio, respeitando rotação e proporção. Não é uma confirmação de
+consumo pelo OBS nem uma medição de latência. O JPEG para prévia é decodificado
+no executor de captura e publicado por StateFlow sem fila de eventos por quadro.
+
+## Formato e ícone de câmera — 0.2.4-dev
+
+Atualize o APK e reabra o receptor. O formato Horizontal/Vertical é selecionado
+no desktop, inclusive com transmissão ativa. A prévia Android acompanha o JPEG
+preparado para envio. A escolha é aplicada sem reconectar; a captura continua
+corrigindo a rotação do sensor e preserva proporção. Vertical pode apresentar
+barras conforme a posição do celular e a saída usada pelo consumidor.
+O botão com câmera e setas alterna frontal/traseira; possui descrição TalkBack.
+
+### Correção de orientação — 0.2.5-dev
+
+Horizontal agora gira os pixels para o enquadramento deitado; Vertical produz
+quadro em pé. Antes, o app apenas encaixava a cena em um canvas diferente, o que
+podia manter uma imagem vertical mesmo selecionando Horizontal. A prévia local
+agora também usa o JPEG preparado, mesmo antes de conectar, sem transmitir esses
+quadros antes da autenticação/início explícito. Para ver a cena em pé, segure o
+telefone de acordo com o formato: uma rotação digital não muda a posição física
+dos objetos. A troca ao vivo continua no seletor do desktop.

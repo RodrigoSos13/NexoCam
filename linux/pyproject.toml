@@ -22,6 +22,9 @@ nexocam-diagnostics = "nexocam.diagnostics.environment:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"nexocam.ui" = ["assets/*.svg"]
+
 [tool.setuptools.data-files]
 "share/applications" = ["resources/nexocam.desktop"]
 "share/icons/hicolor/scalable/apps" = ["resources/nexocam.svg"]

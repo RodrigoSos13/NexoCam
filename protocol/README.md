@@ -66,3 +66,24 @@ Android limita a entrada a 1024 caracteres e valida tudo antes de preencher camp
 Confirmação Conectar continua explícita e o handshake mantém pinning TLS. Não há
 URL HTTP, imagem gravada ou serviço externo. A expiração continua no servidor,
 independente do relógio do celular. O QR deve ser tratado como credencial.
+
+### Confirmação de leitura sem transmissão
+
+`hello` aceita `purpose="pairing"` (padrão omitido: `stream`). Depois de TLS,
+hello e authenticate válidos, o receptor notifica a UI para fechar o diálogo QR,
+responde `state="authenticated"` e fecha com 1000. Não reserva uma sessão de vídeo,
+não exige configure/start e não ativa captura. Finalidades desconhecidas são
+recusadas. O Android usa esse fluxo uma vez após escanear, com timeout total de
+10 segundos e encerramento dos recursos. Conectar permanece uma ação separada.
+
+### Formato de vídeo ao vivo (capacidade opcional)
+
+Android 0.2.4-dev envia `orientation_control=true` em configure. Sem essa capacidade,
+o contrato permanece somente JPEG 640×480 e nenhum comando novo é enviado.
+Com a capacidade, o receptor aceita exatamente 640×480 e 480×640, verificando SOF,
+limite de bytes e shape após decodificar. `state=streaming` inclui `portrait` booleano
+com o formato inicial. Mudanças no seletor desktop enviam `state=format` com
+`portrait=true/false`. O cliente aplica a escolha ao próximo quadro processado,
+sem reabrir câmera ou socket; um quadro anterior em voo permanece válido.
+ACK e limite de um quadro em voo são mantidos. Frames com outras dimensões são
+recusados. A saída V4L2 fixa acomoda o JPEG vertical preservando proporção.
