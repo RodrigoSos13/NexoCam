@@ -34,10 +34,17 @@ class StreamViewModel(
         token: String,
     ) {
         try {
-            val pairing = Pairing(address.trim(), fingerprint.trim(), token.trim())
+            val pairing = parsePairing(address, fingerprint, token)
             mutableConnecting.value = true
             connection.connect(pairing)
             viewModelScope.launch { settings.saveAddress(pairing.address) }
+        } catch (error: InvalidPairing) {
+            mutableStatus.value =
+                when (error.field) {
+                    PairingField.ADDRESS -> R.string.invalid_address
+                    PairingField.FINGERPRINT -> R.string.invalid_fingerprint
+                    PairingField.TOKEN -> R.string.invalid_token
+                }
         } catch (_: IllegalArgumentException) {
             mutableStatus.value = R.string.invalid_pairing
         }

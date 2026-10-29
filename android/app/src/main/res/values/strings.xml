@@ -18,4 +18,12 @@
     <string name="connection_error">Conexão recusada ou indisponível. Confira IP, firewall, identidade TLS e validade do segredo no computador.</string>
     <string name="invalid_pairing">Informe IPv4, impressão digital e segredo exatamente como exibidos no computador.</string>
     <string name="camera_error">Não foi possível abrir ou processar a câmera. Feche outros aplicativos e tente novamente.</string>
+    <string name="activate_before_connect">Ative a câmera acima para habilitar a conexão.</string>
+    <string name="invalid_address">IP inválido: informe somente um IPv4 do computador, sem porta, http ou vírgulas.</string>
+    <string name="invalid_fingerprint">Impressão digital inválida: copie os 64 caracteres hexadecimais da impressão digital TLS, não o segredo.</string>
+    <string name="invalid_token">Segredo inválido: copie os 64 caracteres hexadecimais do segredo temporário exibido no computador.</string>
+    <string name="scan_qr">Escanear QR Code</string>
+    <string name="scan_prompt">Aponte para o QR Code exibido no seu computador</string>
+    <string name="qr_loaded">Dados preenchidos. Confira o computador e toque em Conectar e transmitir.</string>
+    <string name="invalid_qr">QR inválido ou incompatível. Escaneie o código de pareamento do NexoCam.</string>
 </resources>

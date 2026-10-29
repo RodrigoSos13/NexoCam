@@ -77,3 +77,37 @@ Workflows Linux/Android preparados; não executados no GitHub nesta sessão.
 Medição física de FPS capturado/recebido/entregue, taxa de dados e latência completa
 permanece pendente. A UI Linux atual mede FPS de saída do worker, inclusive quadros
 neutros/repetidos, não FPS da câmera Android.
+
+## Correção de entrada Android — 29/10/2026
+
+Android 0.2.1-dev: `ktlintCheck`, `testDebugUnitTest` (4 testes), `lintDebug` e
+`assembleDebug` executados com sucesso. O novo teste verifica normalização de
+espaços, separadores da fingerprint e maiúsculas, mantendo exigência de 64 hex,
+e diferencia campo de IP inválido de fingerprint inválida. `git diff --check`
+sem problemas. Não houve instalação automática nem validação visual no aparelho.
+O APK debug foi atualizado no caminho habitual; o release unsigned anterior não
+foi reconstruído nesta correção.
+
+Diagnóstico da sessão: receptor escutando TCP8765 e teste TLS/hello em localhost
+aprovado sem enviar credenciais. Usuário relatou a mensagem de formato inválido
+no Android, indicando recusa antes da tentativa de conexão. Isso não identifica
+qual campo estava errado e não comprova conectividade Wi-Fi entre os dispositivos.
+
+## QR de pareamento — 29/10/2026
+
+Receptor com qrcode 8.2: geração de matriz somente em memória. Teste decodifica a
+imagem gerada com OpenCV e confere exatamente os dados de pareamento. Entradas
+inválidas são recusadas. A suíte Linux passou com 26 testes (incluindo TLS local
+e abertura/fechamento do diálogo na UI offscreen).
+
+Android 0.2.2-dev: leitor ZXing embarcado, parser com limite de tamanho, versão,
+porta, campos e credenciais. Testes cobrem leitura do formato válido e rejeição de
+QR estrangeiro, versão/porta incompatível, tamanho excessivo e dados inválidos.
+Build debug, 6 testes unitários Android, ktlintCheck e lintDebug aprovados;
+leitura real pela câmera ainda pendente. Wheel e sdist Linux reconstruídos com QR.
+O release unsigned anterior não foi atualizado com QR. Use o APK debug atual.
+
+Validação manual: reinicie o receptor, escolha a interface do hotspot e escaneie
+o QR com o novo APK. Confira preenchimento, cancelamento da leitura, retorno à
+prévia, confirmação de conexão e segredo vencido. Teste também escanear enquanto
+a prévia CameraX está ativa para confirmar liberação da câmera no aparelho.

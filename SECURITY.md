@@ -26,3 +26,8 @@ teste, sem chave privada. Builds, SDK, JDK e dados locais são ignorados pelo Gi
 Reporte vulnerabilidades de forma privada pelo canal indicado pelo mantenedor no
 repositório oficial. Ainda não há contato privado configurado neste código; não
 publique detalhes exploráveis ou credenciais em issues públicas.
+
+Pareamento por QR: o código contém o segredo temporário, é gerado em memória e
+não deve ser publicado. Escaneie somente a tela do computador escolhido. O leitor
+Android é interno, offline, não grava fotos e apenas preenche os campos; a conexão
+continua exigindo confirmação e validação TLS. QR não altera regras de firewall.

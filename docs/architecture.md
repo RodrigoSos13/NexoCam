@@ -1,91 +1,78 @@
-# Arquitetura e decisões
+# NexoCam Protocol v1 — implementação inicial
 
-Monorepositório Android/Linux, protocolo independente de UI. Estado: implementação
-experimental da fase 2; build e testes sem aparelho executados, teste físico pendente.
+WebSocket sobre TLS 1.2+, porta TCP 8765. Mesmo protocolo para Wi-Fi e eventual
+ADB Reverse. Sem compressão WebSocket. Um emissor ativo; até quatro handshakes
+de aplicação pendentes. Origem de navegador recusada (`origins=[None]`).
 
-## Linux
+## Identidade e autenticação
 
-Python ≥3.11; PySide6 para UI; NumPy RGB; pyvirtualcam/v4l2loopback para saída;
-OpenCV headless para JPEG (sem outro toolkit gráfico); websockets asyncio para
-transporte; cryptography para certificado local. Dependências somente locais,
-faixas no pyproject e snapshot de ambiente em requirements-tested-py314.txt.
+Receptor possui certificado EC P-256 autoassinado (validade de um ano), SAN
+`nexocam.local`, e chave persistente em diretório privado. O cliente verifica
+SHA-256 do certificado DER antes de autenticar e verifica validade. No Android,
+OkHttp verifica normalmente o hostname `nexocam.local`; um Dns restrito resolve
+esse nome para o IPv4 manual. Não há hostnameVerifier permissivo ou trust-all.
 
-UI no thread Qt principal. Um QThread possui geração sintética OU event loop
-asyncio do receptor. Detecção de ambiente em outro worker com timeout de subprocess.
-Saída V4L2 pertence ao worker e é fechada por context manager. Decodificação e
-escrita ocorrem nesse worker; se o driver bloquear, investigar no hardware.
-Mailbox UI com lock/capacidade 1, timer Qt e descarte de quadros antigos.
-Não são emitidos sinais Qt por quadro. Métrica UI mede FPS de saída, não captura.
+Interface do receptor exibe fingerprint e segredo aleatório de 256 bits. O segredo
+fica em memória e aceita novas conexões por cinco minutos. Sessões autenticadas
+continuam depois disso. Parar o servidor desconecta todos; cada reinício gera
+outro segredo. Trata-se de autorização efêmera de sessão, sem cadastro permanente
+de aparelhos. Confirmação adicional e tokens persistentes/revogação individual
+são evoluções pendentes. Não coloque material de pareamento em logs ou URLs.
 
-`devices/v4l2.py` usa VIDIOC_QUERYCAP e aceita apenas driver `v4l2 loopback`.
-Não presume /dev/video10 e não confia no rótulo. Nunca carrega módulo ou altera
-permissões silenciosamente. `video/stream.py` conserva o padrão sintético para
-diagnóstico. `network/server.py` oferece fluxo autenticado e saída 640×480/15 alvo.
-Saída neutra após desconexão ou um segundo sem vídeo; no fechamento também tenta
-enviar neutro antes de liberar o dispositivo.
+## Controle e ordem
 
-Servidor abre somente após Iniciar. Escuta IPv4 0.0.0.0:8765; não anuncia via mDNS
-nem muda firewall. Aceita uma sessão, quatro negociações de aplicação pendentes,
-mensagens limitadas, timeout e heartbeat. Não é destinado à exposição pública na
-internet. JPEG tem cabeçalho/dimensões conferidos antes da decodificação e shape
-conferido depois. A fila comprimida tem capacidade 1, com descarte e saída limitada.
+Texto JSON UTF-8 objeto, máximo 4096 bytes. Envelope: `{"v":1,"type":"hello"}`.
+Campos inteiros devem ser inteiros JSON, não booleanos. Versões desconhecidas
+são recusadas. Tipos reconhecidos: hello, authenticate, configure, start, state,
+stop, error. Tipos fora da ordem da sessão são recusados.
 
-## Segurança
+1. Cliente `hello`, campo `device` string imprimível de 1 a 80 caracteres.
+2. Servidor `hello`.
+3. Cliente `authenticate`, `token` hex minúsculo de 64 caracteres.
+4. Servidor `state`, `state="authenticated"`.
+5. Cliente `configure`, `width=640,height=480,fps=15,codec="jpeg"`.
+6. Servidor confirma com `configure` e os mesmos campos.
+7. Cliente `start`; servidor `state`, `state="streaming"`.
+8. Cliente envia mensagens binárias JPEG. Servidor confirma processamento com
+   `state`, `state="frame",sequence=N`. Android mantém no máximo um quadro em voo;
+   capturas enquanto aguarda confirmação são descartadas, sem fila crescente.
+9. Cliente `stop` ou fechamento WebSocket encerra a sessão.
 
-Identidade EC P-256 persistente em $XDG_DATA_HOME/nexocam/identity (fallback
-~/.local/share/nexocam/identity). Diretório 0700, arquivos 0600, escrita por replace.
-Certificado autoassinado com SAN nexocam.local, validade de um ano. Identidade
-incompleta/expirada produz erro e exige recuperação/renovação explícita.
+Autenticação/configuração: timeout 10 s por mensagem. Durante vídeo: sem quadros
+por 20 s encerra. Heartbeat WebSocket 10 s, timeout 20 s. Fechamento 1008 indica
+protocolo/autenticação inválidos; 1013 indica receptor ocupado; excesso de tamanho
+é fechado pelo WebSocket com 1009. Android não repete falha TLS ou fechamento
+1008/1009; erros de transporte usam backoff de 1 a 30 s com jitter e cancelamento.
 
-Pareamento inicial manual: IPv4, fingerprint SHA-256 do DER e segredo 256-bit,
-válido por cinco minutos para novas conexões. Segredo somente em memória, comparação
-constante no servidor. Reiniciar muda segredo e revoga acessos anteriores.
-Não há armazenamento de dispositivos pareados nem revogação individual ainda.
+## Vídeo
 
-Android usa TrustManager restrito ao certificado exato fixado por SHA-256 e
-verifica sua validade. Isso é uma política explícita de confiança local, não
-trust-all. O verificador padrão de hostname do OkHttp é preservado: URL sempre
-nexocam.local, Dns restrito resolve somente esse nome para o IPv4 informado. Não
-há proxy, redirects ou modo de TLS desativado. Credenciais só saem após handshake.
-O lint Android sinaliza CustomX509TrustManager; essa escolha requer revisão de
-segurança continuada e tem testes de pin correto/incorreto e certificado ausente.
-Certificado renovado exige nova confirmação da impressão digital pelo usuário.
+Cabeçalho binário big-endian `!4sBQQ` de 21 bytes: magic `NXCF`, versão 1,
+sequência uint64 crescente por sessão, timestamp monotônico do emissor em µs;
+seguido de JPEG 8-bit. Limite total 1 MiB. Dimensões 640×480 verificadas no SOF
+antes da decodificação e novamente depois; JPEG malformado é recusado. Timestamp
+entre máquinas não mede latência absoluta sem sincronização.
 
-## Android
+Saída alvo 15 FPS; fila comprimida de capacidade 1 e mailbox UI de capacidade 1.
+ACK indica processamento do quadro pelo receptor, não que OBS o tenha consumido.
+O receptor envia quadro neutro quando desconecta ou fica 1 s sem vídeo. Android
+corrige rotação e ajusta para 640×480 com barras, sem deformar proporção. A captura
+nativa e FPS real dependem do aparelho e ainda não foram medidos.
 
-Kotlin 2.1.20, AGP 8.9.2, Gradle 8.11.1, JDK17, API28 mínimo/API35 alvo.
-Versões estáveis escolhidas por compatibilidade e build; não alegamos serem últimas.
-Compose Material3; ViewModel/StateFlow; CameraX ligado ao lifecycle. Apenas CAMERA
-e INTERNET. Ativação da câmera exige ação/consentimento e mostra prévia. Ao sair
-da tela a câmera e conexão param; serviço foreground será uma fase posterior.
+## QR de pareamento
 
-CameraManager configura KEEP_ONLY_LATEST e executor próprio. FrameProcessor converte
-YUV_420_888 respeitando strides para NV21, JPEG/Bitmap, corrige rotação e ajusta em
-canvas RGB 640×480 com barras sem deformar proporção, JPEG qualidade75. ImageProxy
-é sempre fechado; bitmaps temporários são reciclados. A conversão é conservadora
-e precisa de medição física antes de otimizações ou promessas de FPS.
+Prefixo `nexocam:pair:v1:` seguido de objeto JSON com exatamente `v=1`, `host`
+(IPv4), `port=8765`, `fingerprint` (SHA-256 DER em 64 hex) e `token` (64 hex).
+Android limita a entrada a 1024 caracteres e valida tudo antes de preencher campos.
+Confirmação Conectar continua explícita e o handshake mantém pinning TLS. Não há
+URL HTTP, imagem gravada ou serviço externo. A expiração continua no servidor,
+independente do relógio do celular. O QR deve ser tratado como credencial.
 
-ConnectionManager negocia sessão e mantém no máximo um JPEG em voo: espera ACK
-de processamento do receptor; enquanto isso capturas são descartadas antes da
-compressão. Heartbeat e backoff cancelável 1–30 s com jitter. Falhas TLS e rejeições
-de autenticação não são repetidas automaticamente. Segredo expirado exige reinício
-do receptor e nova entrada; não há reconexão ilimitada usando segredo vencido.
-SettingsRepository usa DataStore somente para IP. Não persistimos tokens nem
-fingerprints, então ainda não há material sensível a guardar no Keystore.
-Recursos textuais Android permitem tradução; a UI Linux ainda usa textos inline.
+## QR (29/10/2026)
 
-## Evoluções
-
-Testar câmera física e Wi-Fi antes de declarar fase2 validada; depois ADB com
-timeouts, detecção/autorização e propriedade dos encaminhamentos. O protocolo já
-permite teste ADB Reverse manual sem duplicar captura/decodificação. QR, descoberta,
-pareamento persistente, métricas completas e distribuição assinada ainda pendentes.
-
-Referências consultadas em 27/10/2026:
-- https://letmaik.github.io/pyvirtualcam/
-- https://github.com/v4l2loopback/v4l2loopback
-- https://websockets.readthedocs.io/en/stable/reference/asyncio/server.html
-- https://developer.android.com/media/camera/camerax/analyze
-- https://developer.android.com/build/releases/agp-8-9-0-release-notes
-- https://developer.android.com/jetpack/androidx/releases/camera
-- https://android-developers.googleblog.com/2025/04/whats-new-in-jetpack-compose-april-25.html
+`qrcode` gera somente a matriz em memória, convertida em QImage via NumPy; sem
+Pillow ou arquivos temporários. Linux permite escolher a interface antes de ler.
+ZXing Android Embedded 4.3.0 oferece leitor offline com a mesma permissão CAMERA;
+sem download de modelos ou Google Play Services. O leitor interno não é exportado,
+não grava a foto e não conecta por conta própria. O parser limita tamanho/versão,
+porta e campos; o certificado fixado continua obrigatório antes de enviar segredo.
+Fontes: https://github.com/journeyapps/zxing-android-embedded e https://pypi.org/project/qrcode/.

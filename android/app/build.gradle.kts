@@ -11,8 +11,8 @@ android {
         applicationId = "org.nexocam.app"
         minSdk = 28
         targetSdk = 35
-        versionCode = 2
-        versionName = "0.2.0-dev"
+        versionCode = 4
+        versionName = "0.2.2-dev"
     }
     buildFeatures { compose = true }
     compileOptions {
@@ -39,6 +39,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.4")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20240303")
 }

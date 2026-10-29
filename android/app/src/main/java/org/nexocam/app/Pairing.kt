@@ -6,9 +6,16 @@ import java.net.InetAddress
 import java.security.MessageDigest
 import java.security.cert.CertificateException
 import java.security.cert.X509Certificate
+import java.util.Locale
 import java.util.concurrent.TimeUnit
 import javax.net.ssl.SSLContext
 import javax.net.ssl.X509TrustManager
+
+enum class PairingField { ADDRESS, FINGERPRINT, TOKEN }
+
+class InvalidPairing(
+    val field: PairingField,
+) : IllegalArgumentException()
 
 data class Pairing(
     val address: String,
@@ -19,19 +26,30 @@ data class Pairing(
 
     init {
         val parts = address.split('.')
-        require(
-            parts.size == 4 &&
-                parts.all {
-                    it.isNotEmpty() &&
-                        it.all(Char::isDigit) &&
-                        it.length <= 3 &&
-                        (it.toIntOrNull() ?: -1) in 0..255
-                },
-        )
-        require(fingerprint.matches(Regex("[0-9a-fA-F]{64}")))
-        require(token.matches(Regex("[0-9a-f]{64}")))
+        if (!(
+                parts.size == 4 &&
+                    parts.all {
+                        it.isNotEmpty() && it.all(Char::isDigit) && it.length <= 3 && (it.toIntOrNull() ?: -1) in 0..255
+                    }
+            )
+        ) {
+            throw InvalidPairing(PairingField.ADDRESS)
+        }
+        if (!fingerprint.matches(Regex("[0-9a-fA-F]{64}"))) throw InvalidPairing(PairingField.FINGERPRINT)
+        if (!token.matches(Regex("[0-9a-f]{64}"))) throw InvalidPairing(PairingField.TOKEN)
     }
 }
+
+fun parsePairing(
+    address: String,
+    fingerprint: String,
+    token: String,
+): Pairing =
+    Pairing(
+        address.trim(),
+        fingerprint.filterNot(Char::isWhitespace).replace(":", "").lowercase(Locale.ROOT),
+        token.filterNot(Char::isWhitespace).lowercase(Locale.ROOT),
+    )
 
 class PinnedTrustManager(
     private val fingerprint: String,

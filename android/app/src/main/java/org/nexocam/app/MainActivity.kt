@@ -3,7 +3,9 @@ package org.nexocam.app
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
@@ -32,6 +34,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
@@ -39,6 +42,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 
 class MainActivity : ComponentActivity() {
     private val model: StreamViewModel by viewModels()
@@ -77,6 +82,8 @@ private fun Screen(
     model: StreamViewModel,
     activate: () -> Unit,
 ) {
+    val context = LocalContext.current
+    val keyboard = LocalSoftwareKeyboardController.current
     val camera by model.camera.collectAsStateWithLifecycle()
     val connecting by model.connecting.collectAsStateWithLifecycle()
     val status by model.status.collectAsStateWithLifecycle()
@@ -86,6 +93,48 @@ private fun Screen(
     // Segredo somente na memória desta tela, sem saved state ou DataStore.
     var token by remember { mutableStateOf("") }
     var front by remember { mutableStateOf(false) }
+    var scanRequested by remember { mutableStateOf(false) }
+    val scanner =
+        rememberLauncherForActivityResult(ScanContract()) { result ->
+            val raw = result.contents
+            if (raw != null) {
+                try {
+                    val pairing = parsePairingQr(raw)
+                    address = pairing.address
+                    fingerprint = pairing.fingerprint
+                    token = pairing.token
+                    Toast.makeText(context, R.string.qr_loaded, Toast.LENGTH_LONG).show()
+                    activate()
+                } catch (_: Exception) {
+                    Toast.makeText(context, R.string.invalid_qr, Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    // A composição libera CameraX antes de iniciar a Activity do leitor.
+    LaunchedEffect(camera, scanRequested) {
+        if (scanRequested && !camera) {
+            scanRequested = false
+            scanner.launch(
+                ScanOptions()
+                    .setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                    .setPrompt(context.getString(R.string.scan_prompt))
+                    .setBeepEnabled(false)
+                    .setBarcodeImageEnabled(false)
+                    .setOrientationLocked(false),
+            )
+        }
+    }
+    LaunchedEffect(status) {
+        if (status == R.string.invalid_address ||
+            status == R.string.invalid_fingerprint ||
+            status == R.string.invalid_token ||
+            status == R.string.invalid_pairing ||
+            status == R.string.connection_error ||
+            status == R.string.camera_error
+        ) {
+            Toast.makeText(context, context.getString(status), Toast.LENGTH_LONG).show()
+        }
+    }
     LaunchedEffect(savedAddress) { if (address.isEmpty()) address = savedAddress }
     Column(
         Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp),
@@ -102,6 +151,11 @@ private fun Screen(
             Button(onClick = activate) { Text(stringResource(R.string.activate_camera)) }
             Text(stringResource(R.string.camera_permission))
         }
+        OutlinedButton(onClick = {
+            keyboard?.hide()
+            model.stopCamera()
+            scanRequested = true
+        }, enabled = !connecting) { Text(stringResource(R.string.scan_qr)) }
         OutlinedTextField(
             address,
             { address = it },
@@ -126,7 +180,16 @@ private fun Screen(
             enabled = !connecting,
             modifier = Modifier.fillMaxWidth(),
         )
-        Button(onClick = { model.connect(address, fingerprint, token) }, enabled = camera && !connecting) {
+        Text(
+            stringResource(status),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.fillMaxWidth(),
+        )
+        if (!camera) Text(stringResource(R.string.activate_before_connect))
+        Button(onClick = {
+            keyboard?.hide()
+            model.connect(address, fingerprint, token)
+        }, enabled = camera && !connecting) {
             Text(stringResource(R.string.connect))
         }
         OutlinedButton(onClick = model::disconnect, enabled = connecting) { Text(stringResource(R.string.disconnect)) }

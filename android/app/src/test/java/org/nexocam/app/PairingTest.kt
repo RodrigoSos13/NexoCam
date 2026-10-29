@@ -13,6 +13,16 @@ class PairingTest {
     private val fingerprint = "a".repeat(64)
     private val token = "b".repeat(64)
 
+    @Test fun pastedMaterialNormalizedWithoutRelaxingIdentity() {
+        val parsed = parsePairing(" 192.168.1.2 ", "AA:".repeat(31) + "AA\n", " BB ".repeat(32))
+        assertEquals("a".repeat(64), parsed.fingerprint)
+        assertEquals("b".repeat(64), parsed.token)
+        val error = assertThrows(InvalidPairing::class.java) { parsePairing("192.168.1.2:8765", fingerprint, token) }
+        assertEquals(PairingField.ADDRESS, error.field)
+        val pinError = assertThrows(InvalidPairing::class.java) { parsePairing("192.168.1.2", "not-hex", token) }
+        assertEquals(PairingField.FINGERPRINT, pinError.field)
+    }
+
     @Test fun validAddressAndCredentials() {
         assertEquals("192.168.1.2", Pairing("192.168.1.2", fingerprint, token).address)
         assertFalse(Pairing("127.0.0.1", fingerprint, token).toString().contains(token))

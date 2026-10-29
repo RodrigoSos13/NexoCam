@@ -12,7 +12,7 @@ pode variar; o quadro transmitido é ajustado para 640×480 preservando proporç
 
 **Ainda sem validação ponta a ponta com um celular.** A saída sintética foi vista
 pelo usuário no OBS; isso não comprova câmera Android, Wi-Fi real ou estabilidade.
-USB automatizado, QR, descoberta e pareamento persistente estão pendentes.
+Pareamento por QR implementado; USB automatizado, descoberta e pareamento persistente estão pendentes.
 
 ## Linux
 
@@ -26,8 +26,8 @@ python -m venv .venv
 
 1. Selecione a webcam virtual ou “Somente prévia”.
 2. Selecione **Receber do Android** e clique em **Iniciar**.
-3. Abra **Dados de pareamento**; informe no Android o IPv4 da rede local,
-   a impressão digital TLS e o segredo temporário. Não compartilhe essa tela.
+3. Abra **Dados de pareamento**, escolha a interface da rede local e, no Android,
+   toque em **Escanear QR Code**. Os campos serão preenchidos. Não compartilhe essa tela.
 4. No Android, ative a câmera e toque em **Conectar e transmitir**.
 5. No OBS, selecione NexoCam como dispositivo V4L2.
 

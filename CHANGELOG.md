@@ -1,5 +1,20 @@
 # Histórico
 
+## Android 0.2.2-dev / pareamento QR — 2026-10-29
+
+- QR local com seleção de interface/IP no receptor, sem salvar imagens.
+- Leitor QR offline embarcado no Android; preenche os campos e exige confirmação.
+- Validação de formato, versão, porta, IP e credenciais antes da conexão.
+- Câmera de transmissão liberada antes de abrir o leitor.
+
+
+## Android 0.2.1-dev — 2026-10-29
+
+- Validação informa o campo incorreto e normaliza espaços/maiúsculas dos códigos sem afrouxar o pin TLS.
+- Estado da conexão também junto ao botão, evitando que fique escondido acima da prévia.
+- Erros exibidos como notificação breve e teclado recolhido ao conectar.
+- Orientação junto ao botão quando a câmera ainda não está ativa.
+
 ## 0.2.0.dev1 — 2026-10-27
 
 - Android Kotlin/Compose/CameraX: prévia, permissão, troca de câmera e JPEG orientado.

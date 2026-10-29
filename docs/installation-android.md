@@ -45,8 +45,10 @@ adb install -r app/build/outputs/apk/debug/app-debug.apk
 
 1. Abra o receptor Linux, selecione Receber do Android e Iniciar.
 2. No celular, abra NexoCam e toque em Ativar câmera. Conceda CAMERA.
-3. Escolha o IPv4 do computador na mesma rede e copie os 64 caracteres da
-   impressão digital e os 64 caracteres do segredo temporário exibidos no Linux.
+3. No Linux, abra Dados de pareamento e selecione a interface conectada ao celular
+   (por exemplo, o Wi-Fi do hotspot). No Android, toque em Escanear QR Code e aponte
+   para o QR mostrado no computador. IP, impressão digital e segredo serão preenchidos.
+   Confira o IP e confirme a conexão. O preenchimento manual continua disponível.
 4. Toque em Conectar e transmitir. O certificado será verificado antes do segredo.
 5. Confira prévia recebida no Linux e depois selecione NexoCam no OBS.
 6. Teste troca de câmera, desconexão e encerramento. Mantenha o Android visível:
@@ -67,3 +69,17 @@ mesma impressão digital e segredo. Remova somente esse encaminhamento se foi
 você quem o criou: `adb reverse --remove tcp:8765`. Verifique previamente
 `adb reverse --list` para não sobrescrever encaminhamento de outro aplicativo.
 Isso exige depuração USB e não é UVC nativo. Ainda não foi validado em aparelho.
+
+## Pareamento por QR — Android 0.2.2-dev
+
+Atualize o APK e reinicie o receptor Linux para usar o botão Escanear QR Code.
+O leitor ZXing é embarcado; não exige Google Play Services, download de modelos,
+contas ou internet para escanear. A câmera de transmissão é liberada antes de
+abrir o leitor. Não salva foto do QR. A leitura apenas preenche os campos, sem
+conectar automaticamente; ao retornar, a prévia é ativada mediante a permissão
+já concedida e você confirma Conectar e transmitir.
+
+O QR contém um segredo e vale o mesmo prazo de cinco minutos da sessão. Não
+publique ou fotografe essa tela. Só escaneie o QR exibido no seu computador.
+Não há alteração de firewall: no hotspot, escolha o novo IPv4 da interface Wi-Fi,
+e qualquer regra limitada à rede anterior precisará ser revista pelo usuário.

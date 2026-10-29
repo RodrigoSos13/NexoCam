@@ -9,7 +9,7 @@
    câmera física, câmeras frontal/traseira e Android → Wi-Fi → Linux → OBS.
 3. USB: protocolo compartilhado permite ADB Reverse manual; automação de detecção,
    autorização, propriedade e limpeza dos encaminhamentos ainda não implementada.
-4. Produto: QR, descoberta, pareamento persistente/revogação por aparelho,
+4. Produto: QR implementado (validação física pendente); descoberta, pareamento persistente/revogação por aparelho,
    configurações completas, métricas, acessibilidade, tradução e instaladores.
 5. Medir latência/desempenho, otimizar conversão, avaliar H.264, ampliar matriz,
    assinatura e processo de releases. Nada disso está declarado pronto.

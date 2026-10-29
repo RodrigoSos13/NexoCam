@@ -210,7 +210,7 @@ class Window(QMainWindow):
         dialog.setWindowTitle("Pareamento local seguro")
         layout = QVBoxLayout(dialog)
         instructions = QLabel(
-            f"No Android, informe o IPv4 deste computador e os dados abaixo. Porta {port}.\n"
+            f"No Android, toque em Escanear QR Code e aponte para esta tela. Porta {port}.\n"
             "Use uma rede local confiável. O segredo vale 5 minutos para novas conexões.\n"
             "Para revogar ou gerar outro segredo, interrompa e reinicie o receptor.\n"
             "Não compartilhe fotos desta tela ou o segredo de pareamento."
@@ -219,22 +219,67 @@ class Window(QMainWindow):
         layout.addWidget(instructions)
         from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
 
-        addresses = [
-            address.toString()
-            for address in QNetworkInterface.allAddresses()
-            if address.protocol() == QAbstractSocket.NetworkLayerProtocol.IPv4Protocol
-            and not address.isLoopback()
+        interfaces = [
+            interface
+            for interface in QNetworkInterface.allInterfaces()
+            if interface.flags() & QNetworkInterface.InterfaceFlag.IsUp
+            and not interface.flags() & QNetworkInterface.InterfaceFlag.IsLoopBack
         ]
+        addresses = [
+            (interface.humanReadableName(), entry.ip().toString())
+            for interface in interfaces
+            for entry in interface.addressEntries()
+            if entry.ip().protocol() == QAbstractSocket.NetworkLayerProtocol.IPv4Protocol
+        ]
+        # Wi-Fi/Ethernet primeiro; bridges/VPN continuam selecionáveis explicitamente.
+        addresses.sort(
+            key=lambda item: (item[0].startswith(("docker", "br-", "veth", "virbr")), item[0])
+        )
+        layout.addWidget(QLabel("Endereço da rede conectada ao celular:"))
+        address_picker = QComboBox()
+        for name, address in addresses:
+            address_picker.addItem(f"{name} — {address}", address)
+        layout.addWidget(address_picker)
+        qr_label = QLabel()
+        qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout.addWidget(qr_label)
+        from nexocam.security.qr import payload, pixels
+
+        def update_qr():
+            host = address_picker.currentData()
+            if not host:
+                qr_label.setText(
+                    "Nenhum IPv4 ativo encontrado. Conecte o computador à rede e reabra o pareamento."
+                )
+                return
+            data = pixels(payload(host, fingerprint, token, port))
+            image = QImage(
+                data.data,
+                data.shape[1],
+                data.shape[0],
+                data.strides[0],
+                QImage.Format.Format_Grayscale8,
+            ).copy()
+            qr_label.setPixmap(QPixmap.fromImage(image))
+
+        address_picker.currentIndexChanged.connect(update_qr)
+        update_qr()
+        manual = QWidget()
+        manual_layout = QVBoxLayout(manual)
+        manual.setVisible(False)
+        toggle = QPushButton("Mostrar / ocultar dados para preenchimento manual")
+        toggle.clicked.connect(lambda: manual.setVisible(not manual.isVisible()))
+        layout.addWidget(toggle)
+        layout.addWidget(manual)
         for label, value in (
-            ("IPv4 deste computador (escolha o da rede local)", ", ".join(addresses)),
             ("Impressão digital TLS", fingerprint),
             ("Segredo temporário", token),
         ):
-            layout.addWidget(QLabel(label))
+            manual_layout.addWidget(QLabel(label))
             field = QLineEdit(value)
             field.setReadOnly(True)
             field.setMinimumWidth(560)
-            layout.addWidget(field)
+            manual_layout.addWidget(field)
         done = QPushButton("Fechar")
         done.clicked.connect(dialog.close)
         layout.addWidget(done)

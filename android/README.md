@@ -10,7 +10,7 @@ AGP 8.9.2, Kotlin 2.1.20. Veja ../docs/installation-android.md.
 
 O release é gerado sem assinatura. Somente CAMERA e INTERNET são solicitadas.
 Não há serviço em segundo plano: sair da tela encerra câmera e transmissão.
-Pareamento manual: IPv4 do computador, SHA-256 do certificado e segredo temporário.
+Pareamento por QR offline ou manual: IPv4, SHA-256 do certificado e segredo temporário.
 Apenas o endereço é persistido; credenciais ficam na memória da tela/sessão.
 
 A instalação e a transmissão reais no aparelho ainda precisam ser validadas.

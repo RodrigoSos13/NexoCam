@@ -36,3 +36,17 @@ ou chaves. Não há gravação de vídeo ou logs de quadros na implementação a
 - **Celular aparece como MTP, mas não no ADB:** depuração USB/autorização são
   necessárias para instalar via ADB ou testar Reverse. Para Wi-Fi, instalar o APK
   manualmente é suficiente; o cabo não inicia a transmissão por conta própria.
+
+### Erro de formato antes de conectar
+
+Na versão Android 0.2.0-dev, a mensagem de erro pode ficar acima da prévia, fora
+da área visível enquanto os campos são preenchidos. Ela não significa falha de
+rede: a tentativa ainda não foi iniciada. Volte ao topo para conferir o estado.
+
+Android 0.2.1-dev exibe o estado também ao lado dos controles de conexão e mostra
+qual campo tem formato inválido. Informe somente um IPv4, sem esquema, porta ou
+lista de endereços. Escolha o IPv4 da interface Wi-Fi/Ethernet que alcança o celular,
+não os endereços de bridges de containers. Fingerprint e segredo continuam exigindo
+64 caracteres hexadecimais; espaços copiados e maiúsculas são normalizados. A
+fingerprint também aceita separadores de dois-pontos. Isso não aceita caracteres
+fora de hexadecimal nem desativa a validação do certificado ou a autenticação.

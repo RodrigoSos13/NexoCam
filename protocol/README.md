@@ -16,7 +16,7 @@ Interface do receptor exibe fingerprint e segredo aleatório de 256 bits. O segr
 fica em memória e aceita novas conexões por cinco minutos. Sessões autenticadas
 continuam depois disso. Parar o servidor desconecta todos; cada reinício gera
 outro segredo. Trata-se de autorização efêmera de sessão, sem cadastro permanente
-de aparelhos. QR, confirmação adicional e tokens persistentes/revogação individual
+de aparelhos. Confirmação adicional e tokens persistentes/revogação individual
 são evoluções pendentes. Não coloque material de pareamento em logs ou URLs.
 
 ## Controle e ordem
@@ -57,3 +57,12 @@ ACK indica processamento do quadro pelo receptor, não que OBS o tenha consumido
 O receptor envia quadro neutro quando desconecta ou fica 1 s sem vídeo. Android
 corrige rotação e ajusta para 640×480 com barras, sem deformar proporção. A captura
 nativa e FPS real dependem do aparelho e ainda não foram medidos.
+
+## QR de pareamento
+
+Prefixo `nexocam:pair:v1:` seguido de objeto JSON com exatamente `v=1`, `host`
+(IPv4), `port=8765`, `fingerprint` (SHA-256 DER em 64 hex) e `token` (64 hex).
+Android limita a entrada a 1024 caracteres e valida tudo antes de preencher campos.
+Confirmação Conectar continua explícita e o handshake mantém pinning TLS. Não há
+URL HTTP, imagem gravada ou serviço externo. A expiração continua no servidor,
+independente do relógio do celular. O QR deve ser tratado como credencial.
