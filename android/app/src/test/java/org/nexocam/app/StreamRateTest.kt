@@ -6,6 +6,15 @@ import org.junit.Assert.assertThrows
 import org.junit.Test
 
 class StreamRateTest {
+    @Test fun automaticQualityRespondsToCongestionAndRecoversWithinBounds() {
+        assertEquals(85, adjustedQuality(90, 90, 140.0, 30.0, 30))
+        assertEquals(85, adjustedQuality(90, 90, 40.0, 12.0, 30))
+        assertEquals(50, adjustedQuality(50, 90, 140.0, 12.0, 30))
+        assertEquals(85, adjustedQuality(80, 90, 30.0, 30.0, 30))
+        assertEquals(90, adjustedQuality(90, 90, 30.0, 30.0, 30))
+        assertEquals(80, adjustedQuality(80, 90, 80.0, 24.0, 30))
+    }
+
     @Test fun twoFramesRequireExplicitReceiverSupport() {
         assertEquals(2, preferredFrameWindow(JSONObject("""{"max_in_flight":2}""")))
         for (raw in listOf("{}", """{"max_in_flight":100}""", """{"max_in_flight":"2"}""")) {

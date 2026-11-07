@@ -110,3 +110,22 @@ com receptores antigos que só confirmavam quadros exibidos. Cada quadro recebid
 fora de ordem ou de sequência desconhecida. Quando ambos os espaços estão
 ocupados, novas capturas ficam somente na prévia; não há fila crescente de JPEGs.
 A mailbox de saída continua guardando somente a imagem mais recente.
+
+
+### Resolução e qualidade negociadas
+
+O receptor anuncia `video_size=[width,height]`, `quality` (50–100) e `adaptive`
+no `hello`. Clientes atuais escolhem VGA (640×480), HD (1280×720) ou Full HD
+(1920×1080), respeitando o limite anunciado e a resolução real da captura.
+Sem esses campos, continuam usando VGA/JPEG 75. O receptor confirma resolução,
+qualidade e modo automático em `configure`; somente a resolução negociada e sua
+rotação, quando habilitada, são aceitas. O limite de pacote é 8 MiB, incluindo
+os 21 bytes do cabeçalho, para acomodar JPEG de alta qualidade em Full HD.
+
+No Linux, escolha resolução e qualidade antes de conectar. A saída virtual usa
+a resolução escolhida; celulares com captura inferior enviam uma resolução menor,
+acomodada na saída sem alterar sua proporção. A captura Android solicita até
+1920×1080 com fallback do CameraX. A resolução selecionada permanece estável na
+sessão. Qualidade automática começa em 90 e ajusta JPEG entre 50 e 90 a cada
+cinco segundos conforme FPS confirmado e latência média; modos fixos usam 75,
+90 ou 100. Isso não negocia 4K nem garante 30 FPS em todos os aparelhos.

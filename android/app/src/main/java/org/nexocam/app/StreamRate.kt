@@ -13,3 +13,16 @@ fun frameIntervalNanos(fps: Int): Long {
     require(fps == 15 || fps == 30)
     return (1_000_000_000L + fps - 1) / fps
 }
+
+fun adjustedQuality(
+    current: Int,
+    maximum: Int,
+    averageMs: Double,
+    rate: Double,
+    targetFps: Int,
+): Int =
+    when {
+        averageMs > 100 || rate < targetFps * 0.7 -> (current - 5).coerceAtLeast(50)
+        averageMs < 60 && rate >= targetFps * 0.9 -> (current + 5).coerceAtMost(maximum)
+        else -> current
+    }

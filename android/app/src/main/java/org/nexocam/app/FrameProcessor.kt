@@ -21,11 +21,14 @@ class FrameProcessor {
         image: ImageProxy,
         portrait: Boolean = false,
         encode: Boolean = true,
+        width: Int = 640,
+        height: Int = 480,
+        quality: Int = 75,
     ): PreparedFrame {
         // CameraX converte YUV diretamente; não há JPEG intermediário nem loop por pixel em Kotlin.
         val source = image.toBitmap()
-        val outputWidth = if (portrait) 480 else 640
-        val outputHeight = if (portrait) 640 else 480
+        val outputWidth = if (portrait) height else width
+        val outputHeight = if (portrait) width else height
         var output: Bitmap? = null
         try {
             val degrees = transmissionRotation(source.width, source.height, image.imageInfo.rotationDegrees, portrait)
@@ -46,7 +49,7 @@ class FrameProcessor {
             val jpeg =
                 if (encode) {
                     encoded.reset()
-                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 75, encoded))
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, quality, encoded))
                     encoded.toByteArray()
                 } else {
                     null

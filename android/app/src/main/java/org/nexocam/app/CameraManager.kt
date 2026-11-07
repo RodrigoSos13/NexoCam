@@ -6,6 +6,7 @@ import android.util.Size
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.Preview
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
@@ -31,6 +32,8 @@ class CameraManager(
         readyToSend: () -> Boolean,
         transmissionFps: () -> Int,
         portrait: () -> Boolean,
+        video: () -> Triple<Int, Int, Int>,
+        captureSize: (Int, Int) -> Unit,
         frame: (PreparedFrame) -> Unit,
         error: () -> Unit,
     ) {
@@ -49,9 +52,10 @@ class CameraManager(
                         .setResolutionSelector(
                             ResolutionSelector
                                 .Builder()
+                                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_16_9_FALLBACK_AUTO_STRATEGY)
                                 .setResolutionStrategy(
                                     ResolutionStrategy(
-                                        Size(640, 480),
+                                        Size(1920, 1080),
                                         ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER,
                                     ),
                                 ).build(),
@@ -76,7 +80,18 @@ class CameraManager(
                                 transmissionPacer = FramePacer(frameIntervalNanos(sendFps))
                             }
                             val encode = readyToSend() && transmissionPacer.acquire(now)
-                            frame(processor.process(image, portrait(), encode))
+                            captureSize(maxOf(image.width, image.height), minOf(image.width, image.height))
+                            val settings = video()
+                            frame(
+                                processor.process(
+                                    image,
+                                    portrait(),
+                                    encode,
+                                    settings.first,
+                                    settings.second,
+                                    settings.third,
+                                ),
+                            )
                             if (encode) encodedFrames++
                             val finished = System.nanoTime()
                             val elapsed = finished - now

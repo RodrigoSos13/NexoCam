@@ -359,6 +359,11 @@ private fun CameraPreview(
             { model.connection.canSend },
             { model.connection.fps },
             { model.connection.portrait },
+            { Triple(model.connection.width, model.connection.height, model.connection.quality) },
+            { width, height ->
+                model.connection.captureWidth = width
+                model.connection.captureHeight = height
+            },
             model::frame,
             model::cameraError,
         )

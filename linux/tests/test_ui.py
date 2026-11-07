@@ -29,7 +29,9 @@ def test_ui_preview_start_stop(app):
     window = Window()
     window.show()
     window.mode.setCurrentIndex(1)
+    assert window.output_resolution.text() == "—"
     window.begin()
+    assert window.output_resolution.text() == "640 × 480"
     from time import monotonic, sleep
 
     deadline = monotonic() + 5
@@ -45,6 +47,7 @@ def test_ui_preview_start_stop(app):
         app.processEvents()
         sleep(0.01)
     assert window.worker is None
+    assert window.output_resolution.text() == "—"
     window.close()
     while window.checker is not None and monotonic() < deadline:
         app.processEvents()
@@ -121,6 +124,7 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch, usb_error):
             app.processEvents()
             sleep(0.01)
         assert window.pairing_info is not None
+        assert window.output_resolution.text() == "1920 × 1080"
         assert window.pairing_button.isEnabled()
         assert window.report_dialog.isVisible()
         assert not window.findChild(QWidget, "advancedSettings").isVisible()

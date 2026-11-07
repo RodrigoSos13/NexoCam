@@ -41,13 +41,14 @@ class Worker(QThread):
     pairing_confirmed = Signal()
     usb_result = Signal(bool, str)
 
-    def __init__(self, device=None, diagnostics=False, receive=False):
+    def __init__(self, device=None, diagnostics=False, receive=False, video_size=(1920, 1080), quality=90, adaptive=True):
         super().__init__()
         self.stop = Event()
         self.portrait = Event()
         self.device = device
         self.diagnostics = diagnostics
         self.receive = receive
+        self.video_size, self.quality, self.adaptive = video_size, quality, adaptive
         self.lock = Lock()
         self.latest = None
         self.usb_requested = Event()
@@ -75,6 +76,7 @@ class Worker(QThread):
                     ready=self.pairing_ready.emit,
                     paired=self.pairing_confirmed.emit,
                     portrait=self.portrait.is_set,
+                    video_size=self.video_size, quality=self.quality, adaptive=self.adaptive,
                 )
                 asyncio.run(self.receive_stream(server))
             else:
@@ -188,11 +190,17 @@ class Window(QMainWindow):
         self.mode = QComboBox()
         self.mode.addItem("Receber do Android", True)
         self.mode.addItem("Teste de imagem", False)
+        self.resolution = QComboBox()
+        for title, size in [("Full HD · 1920 × 1080", (1920, 1080)), ("HD · 1280 × 720", (1280, 720)), ("VGA · 640 × 480", (640, 480))]:
+            self.resolution.addItem(title, size)
+        self.quality = QComboBox()
+        for title, value in [("Qualidade automática", (90, True)), ("Máxima · JPEG 100", (100, False)), ("Alta · JPEG 90", (90, False)), ("Econômica · JPEG 75", (75, False))]:
+            self.quality.addItem(title, value)
         self.orientation = QComboBox()
         self.orientation.addItem("Horizontal", False)
         self.orientation.addItem("Vertical", True)
         self.orientation.setToolTip(
-            "Troca ao vivo. Na webcam virtual 640×480, o vídeo vertical tem barras laterais."
+            "Troca ao vivo. Na webcam virtual, o vídeo vertical tem barras laterais."
         )
         self.orientation.currentIndexChanged.connect(self.update_orientation)
         self.mode.currentIndexChanged.connect(
@@ -219,6 +227,10 @@ class Window(QMainWindow):
         self.pairing_button.setVisible(False)
         self.pairing_button.clicked.connect(self.show_pairing)
         self.metrics = label("Pronto para receber vídeo")
+        self.output_resolution = label("—", "statValue")
+        self.output_resolution.setToolTip(
+            "Resolução da saída configurada. A resolução recebida aparece no canto da prévia."
+        )
         self.fps_value = label("—", "statValue")
         self.frames_value = label("0", "statValue")
         self.device_hint = label("Escolha uma saída para usar no OBS.")
@@ -262,7 +274,7 @@ class Window(QMainWindow):
         stats = QHBoxLayout(stats_widget)
         stats.setContentsMargins(0, 0, 0, 0)
         for title, value in (
-            ("RESOLUÇÃO DE SAÍDA", label("640 × 480", "statValue")),
+            ("RESOLUÇÃO DE SAÍDA", self.output_resolution),
             ("FPS DO VÍDEO", self.fps_value),
             ("QUADROS EXIBIDOS", self.frames_value),
         ):
@@ -300,6 +312,8 @@ class Window(QMainWindow):
         controls.addWidget(self.device_hint)
         controls.addWidget(label("Formato", "eyebrow"))
         controls.addWidget(self.orientation)
+        controls.addWidget(self.resolution)
+        controls.addWidget(self.quality)
         advanced = QWidget()
         advanced.setObjectName("advancedSettings")
         advanced_layout = QVBoxLayout(advanced)
@@ -424,12 +438,17 @@ class Window(QMainWindow):
             return
         device = self.devices.currentData()
         receiving = self.mode.currentData()
-        self.worker = Worker(device, receive=receiving)
+        self.worker = Worker(device, receive=receiving, video_size=self.resolution.currentData(),
+                             quality=self.quality.currentData()[0], adaptive=self.quality.currentData()[1])
+        width, height = self.worker.video_size if receiving else (640, 480)
+        self.output_resolution.setText(f"{width} × {height}")
         self.update_orientation()
         self.worker.status_changed.connect(self.status.setText)
         self.worker.pairing_ready.connect(self.paired)
         self.worker.pairing_confirmed.connect(self.close_pairing)
         self.worker.usb_result.connect(self.usb_configured)
+        self.resolution.setEnabled(False)
+        self.quality.setEnabled(False)
         self.mode.setEnabled(False)
         self.worker.failed.connect(self.error)
         self.worker.finished.connect(self.finished)
@@ -714,6 +733,8 @@ class Window(QMainWindow):
     def finished(self):
         self.worker.deleteLater()
         self.worker = None
+        self.resolution.setEnabled(True)
+        self.quality.setEnabled(True)
         self.mode.setEnabled(True)
         self.pairing_info = None
         self.usb_active = self.usb_busy = False
@@ -727,6 +748,7 @@ class Window(QMainWindow):
         self.preview.setText(
             "Sessão encerrada.\n\nSua câmera estará aqui quando você conectar novamente."
         )
+        self.output_resolution.setText("—")
         self.fps_value.setText("—")
         self.metrics.setText("Saída de vídeo interrompida")
         if self.badge.property("state") != "error":

@@ -21,6 +21,19 @@ class ConnectionManager(
     private val scope: CoroutineScope,
     private val status: (Int) -> Unit,
 ) {
+    @Volatile var captureWidth = 640
+
+    @Volatile var captureHeight = 480
+
+    @Volatile var width = 640
+        private set
+
+    @Volatile var height = 480
+        private set
+
+    @Volatile var quality = 75
+        private set
+
     @Volatile var fps = 15
         private set
 
@@ -65,6 +78,10 @@ class ConnectionManager(
             var stage = "hello"
             var requestedFps = 15
             var frameWindow = 1
+            var requestedWidth = 640
+            var requestedHeight = 480
+            var maximumQuality = 75
+            var adaptive = false
             var measuredFrom = System.nanoTime()
             var ackCount = 0
             var ackNanos = 0L
@@ -117,6 +134,22 @@ class ConnectionManager(
                                     "hello" -> {
                                         require(obj.getString("type") == "hello")
                                         requestedFps = preferredStreamFps(obj)
+                                        val limit = obj.optJSONArray("video_size")
+                                        if (limit != null) {
+                                            val sizes = listOf(1920 to 1080, 1280 to 720, 640 to 480)
+                                            val selected =
+                                                sizes.first { (w, h) ->
+                                                    w <= limit.getInt(0) &&
+                                                        h <= limit.getInt(1) &&
+                                                        w <= captureWidth &&
+                                                        h <= captureHeight
+                                                }
+                                            requestedWidth = selected.first
+                                            requestedHeight = selected.second
+                                            maximumQuality = obj.getInt("quality")
+                                            require(maximumQuality in 50..100)
+                                            adaptive = obj.optBoolean("adaptive", false)
+                                        }
                                         frameWindow = preferredFrameWindow(obj)
                                         pendingFrames.reset(frameWindow)
                                         stage = "auth"
@@ -132,8 +165,8 @@ class ConnectionManager(
                                             webSocket,
                                             "configure",
                                             JSONObject()
-                                                .put("width", 640)
-                                                .put("height", 480)
+                                                .put("width", requestedWidth)
+                                                .put("height", requestedHeight)
                                                 .put("fps", requestedFps)
                                                 .put("codec", "jpeg")
                                                 .put("orientation_control", true),
@@ -142,8 +175,8 @@ class ConnectionManager(
                                     "config" -> {
                                         require(
                                             obj.getString("type") == "configure" &&
-                                                obj.getInt("width") == 640 &&
-                                                obj.getInt("height") == 480 &&
+                                                obj.getInt("width") == requestedWidth &&
+                                                obj.getInt("height") == requestedHeight &&
                                                 obj.getInt("fps") == requestedFps &&
                                                 obj.getString("codec") == "jpeg",
                                         )
@@ -156,8 +189,16 @@ class ConnectionManager(
                                         )
                                         stage = "streaming"
                                         portrait = obj.optBoolean("portrait", false)
+                                        width = requestedWidth
+                                        height = requestedHeight
+                                        quality = maximumQuality
                                         fps = requestedFps
                                         streaming = true
+                                        Log.d(
+                                            "NexoCamTransport",
+                                            "capture=${captureWidth}x$captureHeight " +
+                                                "stream=${width}x$height quality=$quality adaptive=$adaptive",
+                                        )
                                         status(R.string.streaming)
                                     }
                                     "streaming" -> {
@@ -178,6 +219,17 @@ class ConnectionManager(
                                                             "ack_ms=${ackNanos / ackCount / 1_000_000.0} " +
                                                             "max_ack_ms=${longestAck / 1_000_000.0}",
                                                     )
+                                                    if (adaptive) {
+                                                        val averageMs = ackNanos / ackCount / 1_000_000.0
+                                                        quality =
+                                                            adjustedQuality(
+                                                                quality,
+                                                                maximumQuality,
+                                                                averageMs,
+                                                                rate,
+                                                                requestedFps,
+                                                            )
+                                                    }
                                                     measuredFrom = now
                                                     ackCount = 0
                                                     ackNanos = 0
@@ -236,7 +288,7 @@ class ConnectionManager(
         val ws = socket ?: return
         if (!streaming ||
             ws.queueSize() != 0L ||
-            jpeg.size > 1048576 - 21 ||
+            jpeg.size > 8 * 1024 * 1024 - 21 ||
             !pendingFrames.available
         ) {
             return

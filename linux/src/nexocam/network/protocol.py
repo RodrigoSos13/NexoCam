@@ -4,7 +4,7 @@ import json
 
 VERSION = 1
 MAX_CONTROL_BYTES = 4096
-MAX_FRAME_BYTES = 1024 * 1024
+MAX_FRAME_BYTES = 8 * 1024 * 1024
 TYPES = {"hello", "authenticate", "configure", "start", "state", "stop", "error"}
 
 
