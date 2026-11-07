@@ -1,10 +1,11 @@
 import asyncio
 import json
+import shutil
 import sys
 from pathlib import Path
 from threading import Event, Lock
 
-from PySide6.QtCore import Qt, QThread, QTimer, Signal
+from PySide6.QtCore import QProcess, Qt, QThread, QTimer, Signal
 from PySide6.QtGui import QAction, QCloseEvent, QIcon, QImage, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -433,7 +434,7 @@ class Window(QMainWindow):
             and not interface.flags() & QNetworkInterface.InterfaceFlag.IsLoopBack
         ]
         addresses = [
-            (interface.humanReadableName(), entry.ip().toString())
+            (interface.name(), entry.ip().toString(), entry.netmask().toString())
             for interface in interfaces
             for entry in interface.addressEntries()
             if entry.ip().protocol() == QAbstractSocket.NetworkLayerProtocol.IPv4Protocol
@@ -444,9 +445,65 @@ class Window(QMainWindow):
         )
         layout.addWidget(label("REDE DO COMPUTADOR", "eyebrow"))
         address_picker = QComboBox()
-        for name, address in addresses:
+        for name, address, netmask in addresses:
             address_picker.addItem(f"{name} — {address}", address)
         layout.addWidget(address_picker)
+        network_help = label(
+            "Use o mesmo Wi-Fi no celular e no computador. Se não conectar, "
+            "libere o acesso à rede abaixo. Redes de convidados podem bloquear a conexão."
+        )
+        network_help.setWordWrap(True)
+        layout.addWidget(network_help)
+        firewall_button = QPushButton("Liberar acesso no firewall…")
+        layout.addWidget(firewall_button)
+        firewall_status = label("")
+        firewall_status.setWordWrap(True)
+        layout.addWidget(firewall_status)
+        ufw = shutil.which("ufw")
+        pkexec = shutil.which("pkexec")
+        firewall_button.setEnabled(bool(ufw and pkexec and addresses))
+        if not ufw or not pkexec:
+            firewall_status.setText(
+                "Liberação automática disponível com UFW e PolicyKit. Em outros firewalls, "
+                f"permita TCP {port} na rede local."
+            )
+        firewall_process = QProcess(self)
+
+        def release_firewall():
+            from nexocam.network.firewall import ufw_rule
+
+            index = address_picker.currentIndex()
+            if index < 0:
+                return
+            name, address, netmask = addresses[index]
+            try:
+                arguments = ufw_rule(name, address, netmask, port)
+            except ValueError as error:
+                firewall_status.setText(str(error))
+                return
+            firewall_button.setEnabled(False)
+            address_picker.setEnabled(False)
+            firewall_status.setText("Autorize a alteração na janela do sistema…")
+            firewall_process.start(pkexec, [ufw, *arguments])
+
+        def firewall_finished(code, exit_status):
+            firewall_button.setEnabled(True)
+            address_picker.setEnabled(True)
+            firewall_status.setText(
+                "Acesso liberado para esta rede, mesmo se o IP do celular mudar. "
+                "Tente conectar novamente. Ao mudar de rede, repita esta liberação."
+                if code == 0 and exit_status == QProcess.ExitStatus.NormalExit
+                else "Não foi possível liberar o acesso. Confira a autorização do administrador."
+            )
+
+        def firewall_error(error):
+            firewall_button.setEnabled(True)
+            address_picker.setEnabled(True)
+            firewall_status.setText("Não foi possível iniciar a autorização do firewall.")
+
+        firewall_button.clicked.connect(release_firewall)
+        firewall_process.finished.connect(firewall_finished)
+        firewall_process.errorOccurred.connect(firewall_error)
         qr_label = QLabel()
         qr_label.setObjectName("qr")
         qr_label.setAlignment(Qt.AlignmentFlag.AlignCenter)

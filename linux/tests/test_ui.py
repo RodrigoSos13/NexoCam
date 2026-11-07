@@ -4,7 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtWidgets import QApplication
+from PySide6.QtWidgets import QApplication, QPushButton
 
 from nexocam.ui.window import Window, Worker
 
@@ -63,6 +63,18 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
     from nexocam.security.identity import Identity
     from nexocam.ui import window as window_module
 
+    firewall_calls = []
+    original_which = window_module.shutil.which
+    monkeypatch.setattr(
+        window_module.shutil,
+        "which",
+        lambda name: f"/usr/bin/{name}" if name in ("ufw", "pkexec") else original_which(name),
+    )
+    monkeypatch.setattr(
+        window_module.QProcess,
+        "start",
+        lambda self, program, arguments: firewall_calls.append((program, arguments)),
+    )
     monkeypatch.setattr(window_module, "default_identity", lambda: Identity(tmp_path / "identity"))
     # Porta efêmera evita depender de uma instância do usuário já aberta em 8765.
     original = window_module.StreamServer
@@ -82,6 +94,19 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
         assert window.pairing_info is not None
         assert window.pairing_button.isEnabled()
         assert window.report_dialog.isVisible()
+        assert firewall_calls == []
+        firewall_button = next(
+            button
+            for button in window.report_dialog.findChildren(QPushButton)
+            if button.text() == "Liberar acesso no firewall…"
+        )
+        if firewall_button.isEnabled():
+            firewall_button.click()
+            assert len(firewall_calls) == 1
+            program, arguments = firewall_calls[0]
+            assert program == "/usr/bin/pkexec"
+            assert arguments[:2] == ["/usr/bin/ufw", "allow"]
+            assert "/" in arguments[arguments.index("from") + 1]
         window.worker.pairing_confirmed.emit()
         app.processEvents()
         assert not window.report_dialog.isVisible()

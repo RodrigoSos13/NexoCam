@@ -23,6 +23,13 @@ ou chaves. Não há gravação de vídeo ou logs de quadros na implementação a
 - **Falha na conexão:** celular e Linux precisam se alcançar no IPv4 escolhido,
   sem isolamento Wi-Fi de clientes, com TCP 8765 permitido pelo firewall. O app
   não muda regras automaticamente. Confira fingerprint diretamente no computador.
+- **Funcionava antes e parou após mudar o Wi-Fi ou o IP do celular:** abra o
+  pareamento, selecione a interface atual e use **Liberar acesso no firewall…**.
+  Autorize a alteração na janela do sistema. Requer UFW e PolicyKit; a regra
+  permite somente TCP na porta do receptor, na interface e sub-rede selecionadas,
+  sem depender do IP individual do celular. Não ativa UFW nem remove regras antigas.
+  Escaneie o QR atual novamente. Redes de convidados ou isolamento entre clientes
+  precisam ser ajustados no roteador. Outros firewalls exigem configuração própria.
 - **Pareamento rejeitado:** segredo vale cinco minutos para novas conexões. Pare
   e reinicie o receptor, copie o novo segredo e conecte novamente.
 - **TLS expirado ou identidade incompleta:** restaure certificado e chave juntos;

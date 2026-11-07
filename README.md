@@ -33,7 +33,10 @@ python -m venv .venv
 5. No OBS, selecione NexoCam como dispositivo V4L2.
 
 Linux e celular precisam se alcançar na rede local pela porta TCP 8765. O
-programa não altera firewall, módulo do kernel ou permissões automaticamente.
+No pareamento, **Liberar acesso no firewall…** permite autorizar pelo sistema uma
+regra UFW para a interface e sub-rede selecionadas. Assim, mudanças no IP do celular
+dentro dessa rede não exigem nova regra. Ao trocar de rede, repita a liberação.
+O programa não altera firewall sem essa ação nem modifica módulo do kernel ou permissões.
 O modo de teste sintético continua disponível na seleção de modo.
 
 ## Android
