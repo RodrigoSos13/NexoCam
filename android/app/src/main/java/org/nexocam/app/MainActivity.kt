@@ -49,9 +49,11 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
@@ -101,6 +103,13 @@ private fun Screen(
     val keyboard = LocalSoftwareKeyboardController.current
     val camera by model.camera.collectAsStateWithLifecycle()
     val connecting by model.connecting.collectAsStateWithLifecycle()
+    val view = LocalView.current
+    // Inclui tentativas de reconexão, sem manter a tela ligada na prévia ociosa.
+    DisposableEffect(view, camera, connecting) {
+        val previous = view.keepScreenOn
+        view.keepScreenOn = camera && connecting
+        onDispose { view.keepScreenOn = previous }
+    }
     val status by model.status.collectAsStateWithLifecycle()
     val savedAddress by model.lastAddress.collectAsStateWithLifecycle(initialValue = "")
     var address by remember { mutableStateOf("") }
@@ -109,6 +118,7 @@ private fun Screen(
     var token by remember { mutableStateOf("") }
     var front by remember { mutableStateOf(false) }
     var showConnection by remember { mutableStateOf(false) }
+    var showInstructions by remember { mutableStateOf(false) }
     var scanRequested by remember { mutableStateOf(false) }
     val scanner =
         rememberLauncherForActivityResult(ScanContract()) { result ->
@@ -154,6 +164,12 @@ private fun Screen(
         }
     }
     LaunchedEffect(savedAddress) { if (address.isEmpty()) address = savedAddress }
+    val hasPairing = address.isNotBlank() && fingerprint.isNotBlank() && token.isNotBlank()
+    val scan = {
+        keyboard?.hide()
+        model.stopCamera()
+        scanRequested = true
+    }
     Column(
         Modifier
             .fillMaxSize()
@@ -168,23 +184,37 @@ private fun Screen(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(stringResource(R.string.app_name), style = MaterialTheme.typography.headlineMedium)
-            TextButton(onClick = { showConnection = true }) { Text(stringResource(R.string.connection_details)) }
+            TextButton(onClick = { showInstructions = true }) { Text(stringResource(R.string.help_button)) }
         }
         Text(stringResource(status), style = MaterialTheme.typography.bodyMedium)
         Box(Modifier.weight(1f).fillMaxWidth().background(Color.Black), contentAlignment = Alignment.Center) {
             if (camera) {
                 CameraPreview(front, model)
             } else {
-                Button(onClick = activate) { Text(stringResource(R.string.activate_camera)) }
+                Column(
+                    Modifier.padding(24.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(16.dp),
+                ) {
+                    Text(
+                        stringResource(if (hasPairing) R.string.ready_hint else R.string.start_hint),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        style = MaterialTheme.typography.bodyMedium,
+                        textAlign = TextAlign.Center,
+                    )
+                    Button(onClick = if (hasPairing) activate else scan) {
+                        Text(stringResource(if (hasPairing) R.string.activate_camera else R.string.scan_to_start))
+                    }
+                }
             }
         }
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = {
-                keyboard?.hide()
-                model.stopCamera()
-                scanRequested = true
-            }, enabled = !connecting, modifier = Modifier.weight(1f)) { Text(stringResource(R.string.scan_qr)) }
-            if (camera) {
+        if (camera) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                if (!connecting) {
+                    OutlinedButton(onClick = scan, modifier = Modifier.weight(1f)) {
+                        Text(stringResource(if (hasPairing) R.string.scan_again else R.string.scan_qr))
+                    }
+                }
                 FilledTonalIconButton(onClick = { front = !front }, modifier = Modifier.size(48.dp)) {
                     Icon(
                         painterResource(R.drawable.ic_switch_camera),
@@ -198,7 +228,7 @@ private fun Screen(
                 Button(onClick = model::disconnect, modifier = Modifier.weight(1f)) {
                     Text(stringResource(R.string.disconnect))
                 }
-            } else {
+            } else if (camera && hasPairing) {
                 Button(onClick = {
                     keyboard?.hide()
                     if (address.isBlank() || fingerprint.isBlank() || token.isBlank()) {
@@ -210,8 +240,41 @@ private fun Screen(
                     Text(stringResource(R.string.connect))
                 }
             }
-            if (camera) OutlinedButton(onClick = model::stopCamera) { Text(stringResource(R.string.stop_camera)) }
+            if (camera && !connecting) {
+                OutlinedButton(onClick = model::stopCamera) { Text(stringResource(R.string.stop_camera)) }
+            }
         }
+    }
+    if (showInstructions) {
+        AlertDialog(
+            onDismissRequest = { showInstructions = false },
+            title = { Text(stringResource(R.string.instructions_title)) },
+            text = {
+                Column(
+                    Modifier.verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(stringResource(R.string.instructions_usb_title), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.instructions_usb))
+                    Text(stringResource(R.string.instructions_wifi_title), style = MaterialTheme.typography.titleSmall)
+                    Text(stringResource(R.string.instructions_wifi))
+                    Text(
+                        stringResource(R.string.instructions_stream_title),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    Text(stringResource(R.string.visible_only))
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showInstructions = false }) { Text(stringResource(R.string.close_instructions)) }
+            },
+            dismissButton = {
+                TextButton(onClick = {
+                    showInstructions = false
+                    showConnection = true
+                }) { Text(stringResource(R.string.connection_details)) }
+            },
+        )
     }
     if (showConnection) {
         AlertDialog(
@@ -289,9 +352,16 @@ private fun CameraPreview(
     }
     DisposableEffect(front, owner, view) {
         val camera = CameraManager(context)
-        camera.start(owner, view, front, {
-            !model.connection.streaming || model.connection.canSend
-        }, { model.connection.portrait }, model::frame, model::cameraError)
+        camera.start(
+            owner,
+            view,
+            front,
+            { model.connection.canSend },
+            { model.connection.fps },
+            { model.connection.portrait },
+            model::frame,
+            model::cameraError,
+        )
         onDispose { camera.stop() }
     }
 }

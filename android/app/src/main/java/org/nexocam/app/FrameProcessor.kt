@@ -1,85 +1,63 @@
 package org.nexocam.app
 
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
-import android.graphics.ImageFormat
-import android.graphics.Matrix
 import android.graphics.Paint
-import android.graphics.Rect
-import android.graphics.RectF
-import android.graphics.YuvImage
 import androidx.camera.core.ImageProxy
 import androidx.core.graphics.createBitmap
 import java.io.ByteArrayOutputStream
 
+data class PreparedFrame(
+    val jpeg: ByteArray?,
+    val preview: Bitmap,
+)
+
 class FrameProcessor {
-    fun jpeg(
+    private val paint = Paint(Paint.FILTER_BITMAP_FLAG)
+    private val encoded = ByteArrayOutputStream(65536)
+
+    fun process(
         image: ImageProxy,
         portrait: Boolean = false,
-    ): ByteArray {
-        val width = image.width
-        val height = image.height
-        val nv21 = ByteArray(width * height * 3 / 2)
-
-        fun sample(
-            plane: ImageProxy.PlaneProxy,
-            row: Int,
-            col: Int,
-        ): Byte = plane.buffer.get(plane.buffer.position() + row * plane.rowStride + col * plane.pixelStride)
-        for (y in 0 until height) {
-            for (x in 0 until width) {
-                nv21[y * width + x] = sample(image.planes[0], y, x)
-            }
-        }
-        var index = width * height
-        for (y in 0 until height / 2) {
-            for (x in 0 until width / 2) {
-                nv21[index++] = sample(image.planes[2], y, x)
-                nv21[index++] = sample(image.planes[1], y, x)
-            }
-        }
-        val intermediate = ByteArrayOutputStream()
-        check(
-            YuvImage(nv21, ImageFormat.NV21, width, height, null)
-                .compressToJpeg(Rect(0, 0, width, height), 90, intermediate),
-        )
-        val bytes = intermediate.toByteArray()
-        val bitmap =
-            BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
-                ?: error("Falha ao converter YUV")
-        val degrees = transmissionRotation(width, height, image.imageInfo.rotationDegrees, portrait)
-        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
-        val rotated = Bitmap.createBitmap(bitmap, 0, 0, bitmap.width, bitmap.height, matrix, true)
+        encode: Boolean = true,
+    ): PreparedFrame {
+        // CameraX converte YUV diretamente; não há JPEG intermediário nem loop por pixel em Kotlin.
+        val source = image.toBitmap()
         val outputWidth = if (portrait) 480 else 640
         val outputHeight = if (portrait) 640 else 480
-        val output = createBitmap(outputWidth, outputHeight)
+        var output: Bitmap? = null
         try {
-            val canvas = Canvas(output)
-            canvas.drawColor(Color.BLACK)
-            val scale = minOf(outputWidth.toFloat() / rotated.width, outputHeight.toFloat() / rotated.height)
-            val w = rotated.width * scale
-            val h = rotated.height * scale
-            canvas.drawBitmap(
-                rotated,
-                null,
-                RectF(
-                    (outputWidth - w) / 2,
-                    (outputHeight - h) / 2,
-                    (outputWidth + w) / 2,
-                    (outputHeight + h) / 2,
-                ),
-                Paint(Paint.FILTER_BITMAP_FLAG),
-            )
-            return ByteArrayOutputStream().use { buffer ->
-                check(output.compress(Bitmap.CompressFormat.JPEG, 75, buffer))
-                buffer.toByteArray()
+            val degrees = transmissionRotation(source.width, source.height, image.imageInfo.rotationDegrees, portrait)
+            val swapped = degrees == 90 || degrees == 270
+            val rotatedWidth = if (swapped) source.height else source.width
+            val rotatedHeight = if (swapped) source.width else source.height
+            val scale = minOf(outputWidth.toFloat() / rotatedWidth, outputHeight.toFloat() / rotatedHeight)
+            val bitmap = createBitmap(outputWidth, outputHeight)
+            output = bitmap
+            Canvas(bitmap).apply {
+                drawColor(Color.BLACK)
+                translate(outputWidth / 2f, outputHeight / 2f)
+                rotate(degrees.toFloat())
+                scale(scale, scale)
+                translate(-source.width / 2f, -source.height / 2f)
+                drawBitmap(source, 0f, 0f, paint)
             }
+            val jpeg =
+                if (encode) {
+                    encoded.reset()
+                    check(bitmap.compress(Bitmap.CompressFormat.JPEG, 75, encoded))
+                    encoded.toByteArray()
+                } else {
+                    null
+                }
+            // A prévia usa os mesmos pixels preparados, sem descomprimir o JPEG no celular.
+            return PreparedFrame(jpeg, bitmap)
+        } catch (error: Exception) {
+            output?.recycle()
+            throw error
         } finally {
-            if (rotated !== bitmap) rotated.recycle()
-            bitmap.recycle()
-            output.recycle()
+            source.recycle()
         }
     }
 }

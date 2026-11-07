@@ -66,9 +66,11 @@ async def wait_until(predicate):
             await asyncio.sleep(0.01)
 
 
-async def authenticate(ws, token, orientation_control=False, before_start=None):
+async def authenticate(ws, token, orientation_control=False, before_start=None, fps=15):
     await ws.send(control("hello", device="Teste sem celular"))
-    assert json.loads(await ws.recv())["type"] == "hello"
+    hello = json.loads(await ws.recv())
+    assert hello["type"] == "hello"
+    assert hello["max_in_flight"] == 2
     await ws.send(control("authenticate", token=token))
     assert json.loads(await ws.recv())["state"] == "authenticated"
     await ws.send(
@@ -76,12 +78,13 @@ async def authenticate(ws, token, orientation_control=False, before_start=None):
             "configure",
             width=640,
             height=480,
-            fps=15,
+            fps=fps,
             codec="jpeg",
             orientation_control=orientation_control,
         )
     )
-    assert json.loads(await ws.recv())["type"] == "configure"
+    config = json.loads(await ws.recv())
+    assert config["type"] == "configure" and config["fps"] == fps
     if before_start:
         await before_start()
     await ws.send(control("start"))
@@ -240,3 +243,143 @@ def test_portrait_requires_negotiation_and_fits_virtual_output():
     assert output.shape == (480, 640, 3)
     assert np.all(output[:, :140] == 0)
     assert np.all(output[:, 180:460] > 190)
+
+
+def test_ack_does_not_wait_for_output_and_only_newest_frame_is_displayed(tmp_path):
+    async def scenario():
+        identity = Identity(tmp_path / "tls")
+        stop = Event()
+        release_output = asyncio.Event()
+        published = []
+        server = StreamServer(
+            identity,
+            host="127.0.0.1",
+            port=0,
+            publish=lambda frame, count, fps: published.append((frame, count, fps)),
+        )
+        original_output = server.output
+
+        async def paused_output(camera):
+            await release_output.wait()
+            await original_output(camera)
+
+        server.output = paused_output
+        task = asyncio.create_task(server.run(stop))
+        try:
+            await wait_until(lambda: server.bound_port is not None or task.done())
+            if task.done():
+                await task
+            context = ssl.create_default_context(cafile=str(identity.cert_path))
+            async with connect(
+                f"wss://127.0.0.1:{server.bound_port}",
+                ssl=context,
+                server_hostname="nexocam.local",
+                proxy=None,
+            ) as ws:
+                await authenticate(ws, server.pairing.token)
+                for batch in ((1, 2), (3,)):
+                    for sequence in batch:
+                        packet = make_packet(
+                            sequence, np.full((480, 640, 3), sequence * 50, dtype=np.uint8)
+                        )
+                        await ws.send(packet)
+                    for sequence in batch:
+                        ack = json.loads(await asyncio.wait_for(ws.recv(), 1))
+                        assert ack["state"] == "frame" and ack["sequence"] == sequence
+                assert not published  # A saída está bloqueada, mas o emissor continua livre.
+                assert server.received == 3 and server.dropped == 2
+                release_output.set()
+                await wait_until(lambda: bool(published))
+                assert np.array_equal(published[0][0], decode(packet[HEADER.size :]))
+                assert published[0][1:] == (1, 1.0)
+                await wait_until(lambda: published[-1][2] == 0)
+                assert published[-1][1] == 1  # Repetições não inflam a contagem/FPS.
+                assert np.array_equal(published[-1][0], neutral())
+        finally:
+            stop.set()
+            release_output.set()
+            await asyncio.wait_for(task, 5)
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("fps", [15, 30])
+def test_negotiated_rate_reaches_output_without_fifteen_fps_cap(tmp_path, monkeypatch, fps):
+    from nexocam.network import server as server_module
+
+    camera_rates = []
+
+    class FakeCamera:
+        def __init__(self, device, fps):
+            camera_rates.append(fps)
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def send(self, frame):
+            assert frame.shape == (480, 640, 3)
+
+    monkeypatch.setattr(server_module, "VirtualCameraManager", FakeCamera)
+
+    async def scenario():
+        identity = Identity(tmp_path / "tls")
+        stop = Event()
+        server = StreamServer(identity, device="test", host="127.0.0.1", port=0)
+        task = asyncio.create_task(server.run(stop))
+        try:
+            await wait_until(lambda: server.bound_port is not None or task.done())
+            if task.done():
+                await task
+            context = ssl.create_default_context(cafile=str(identity.cert_path))
+            async with connect(
+                f"wss://127.0.0.1:{server.bound_port}",
+                ssl=context,
+                server_hostname="nexocam.local",
+                proxy=None,
+            ) as ws:
+                await authenticate(ws, server.pairing.token, fps=fps)
+                assert server.fps == fps
+                started = asyncio.get_running_loop().time()
+                total = fps
+                for sequence in range(1, total + 1):
+                    deadline = started + (sequence - 1) / fps
+                    await asyncio.sleep(max(0, deadline - asyncio.get_running_loop().time()))
+                    await ws.send(make_packet(sequence))
+                    ack = json.loads(await asyncio.wait_for(ws.recv(), 1))
+                    assert ack["sequence"] == sequence
+                await asyncio.sleep(1 / fps + 0.02)
+                assert server.received == total
+                assert server.displayed >= total * 0.7
+                assert camera_rates == [30]
+        finally:
+            stop.set()
+            await asyncio.wait_for(task, 5)
+
+    asyncio.run(scenario())
+
+
+def test_preview_wakes_on_frame_before_virtual_output_deadline():
+    async def scenario():
+        published = []
+        server = StreamServer(None, publish=lambda frame, *_: published.append(frame))
+        server.fps = 1  # Simula um próximo tick V4L2 distante para separar os relógios.
+        server.current = neutral()
+        server.active = object()
+        server.last_frame = asyncio.get_running_loop().time()
+        task = asyncio.create_task(server.output(None))
+        try:
+            await wait_until(lambda: bool(published))
+            newest = np.full((480, 640, 3), 123, dtype=np.uint8)
+            server.latest = newest
+            server.frame_ready.set()
+            await asyncio.wait_for(wait_until(lambda: published[-1] is newest), 0.5)
+            assert server.displayed == 1
+        finally:
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+
+    asyncio.run(scenario())

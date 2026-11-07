@@ -43,6 +43,11 @@ ou chaves. Não há gravação de vídeo ou logs de quadros na implementação a
 - **Celular aparece como MTP, mas não no ADB:** depuração USB/autorização são
   necessárias para instalar via ADB ou testar Reverse. Para Wi-Fi, instalar o APK
   manualmente é suficiente; o cabo não inicia a transmissão por conta própria.
+- **Cabo USB:** selecione Cabo USB no pareamento e toque em Verificar cabo novamente.
+  ADB precisa estar instalado, o cabo deve transmitir dados e o Android deve
+  autorizar a depuração. A interface informa se falta autorização, permissão udev,
+  se há mais de um aparelho USB ou conflito na porta encaminhada. Ao reconectar
+  o cabo, prepare novamente. Se o segredo expirar, reinicie a sessão e leia o novo QR.
 
 ### Erro de formato antes de conectar
 

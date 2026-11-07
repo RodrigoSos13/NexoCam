@@ -6,6 +6,7 @@ STYLESHEET = """
 QWidget { color: #e7ecef; font-family: 'Noto Sans', 'DejaVu Sans', sans-serif; font-size: 13px; }
 QMainWindow, QDialog, QMessageBox { background: #101417; }
 QWidget#root { background: #101417; }
+QWidget#pairingBody { background: #101417; }
 QFrame#panel, QFrame#videoCard { background: #191f23; border: 1px solid #2a3339; border-radius: 16px; }
 QFrame#statusCard { background: #12181b; border: 1px solid #2a3339; border-radius: 10px; }
 QLabel { background: transparent; border: none; }

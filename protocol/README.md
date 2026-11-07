@@ -30,11 +30,11 @@ stop, error. Tipos fora da ordem da sessão são recusados.
 2. Servidor `hello`.
 3. Cliente `authenticate`, `token` hex minúsculo de 64 caracteres.
 4. Servidor `state`, `state="authenticated"`.
-5. Cliente `configure`, `width=640,height=480,fps=15,codec="jpeg"`.
+5. Cliente `configure`, `width=640,height=480,fps=15` ou `30,codec="jpeg"`.
 6. Servidor confirma com `configure` e os mesmos campos.
 7. Cliente `start`; servidor `state`, `state="streaming"`.
-8. Cliente envia mensagens binárias JPEG. Servidor confirma processamento com
-   `state`, `state="frame",sequence=N`. Android mantém no máximo um quadro em voo;
+8. Cliente envia mensagens binárias JPEG. Servidor confirma validação e decodificação com
+   `state`, `state="frame",sequence=N`. Android mantém uma janela limitada de quadros em voo;
    capturas enquanto aguarda confirmação são descartadas, sem fila crescente.
 9. Cliente `stop` ou fechamento WebSocket encerra a sessão.
 
@@ -52,8 +52,10 @@ seguido de JPEG 8-bit. Limite total 1 MiB. Dimensões 640×480 verificadas no SO
 antes da decodificação e novamente depois; JPEG malformado é recusado. Timestamp
 entre máquinas não mede latência absoluta sem sincronização.
 
-Saída alvo 15 FPS; fila comprimida de capacidade 1 e mailbox UI de capacidade 1.
-ACK indica processamento do quadro pelo receptor, não que OBS o tenha consumido.
+Saída alvo conforme FPS negociado (15 ou 30); mailbox de quadros decodificados de capacidade 1 e mailbox UI
+de capacidade 1. Um quadro novo substitui o anterior ainda não exibido.
+ACK é enviado logo após validar e decodificar, sem aguardar o ciclo de saída de
+vídeo. Indica processamento pelo receptor, não que UI ou OBS o tenham consumido.
 O receptor envia quadro neutro quando desconecta ou fica 1 s sem vídeo. Android
 corrige rotação e ajusta para 640×480 com barras, sem deformar proporção. A captura
 nativa e FPS real dependem do aparelho e ainda não foram medidos.
@@ -85,5 +87,26 @@ limite de bytes e shape após decodificar. `state=streaming` inclui `portrait` b
 com o formato inicial. Mudanças no seletor desktop enviam `state=format` com
 `portrait=true/false`. O cliente aplica a escolha ao próximo quadro processado,
 sem reabrir câmera ou socket; um quadro anterior em voo permanece válido.
-ACK e limite de um quadro em voo são mantidos. Frames com outras dimensões são
+ACK e janela limitada são mantidos. Frames com outras dimensões são
 recusados. A saída V4L2 fixa acomoda o JPEG vertical preservando proporção.
+
+### Negociação de taxa — Android 0.2.10-dev
+
+O receptor anuncia `supported_fps=[15,30]` em hello. O Android escolhe 30 somente
+quando esse inteiro estiver anunciado; sem o campo, continua pedindo 15.
+O receptor aceita somente inteiros 15 ou 30 em configure e confirma o valor.
+Clientes antigos continuam enviando 15 e ignoram o campo adicional do hello.
+O ritmo de captura para transmissão e a saída desktop acompanham a taxa negociada.
+A webcam virtual do receptor abre com capacidade de 30 FPS; fontes a 15 FPS
+continuam produzindo apenas 15 imagens novas por segundo. O teste sintético
+permanece a 15 FPS. Os ACKs e os limites de tamanho permanecem.
+
+### Janela limitada — Android 0.2.11-dev
+
+O receptor anuncia `max_in_flight=2` em hello para permitir dois quadros em
+trânsito. Sem esse campo, o cliente mantém um único quadro em voo, compatível
+com receptores antigos que só confirmavam quadros exibidos. Cada quadro recebido
+é validado/decodificado e recebe ACK em ordem. O Android rejeita ACK duplicado,
+fora de ordem ou de sequência desconhecida. Quando ambos os espaços estão
+ocupados, novas capturas ficam somente na prévia; não há fila crescente de JPEGs.
+A mailbox de saída continua guardando somente a imagem mais recente.

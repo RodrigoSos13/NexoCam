@@ -27,6 +27,7 @@ from PySide6.QtWidgets import (
 
 from nexocam.diagnostics.environment import report
 from nexocam.network.server import StreamServer
+from nexocam.network.usb import UsbError, UsbTunnel
 from nexocam.security.identity import default_identity
 from nexocam.ui.theme import STYLESHEET
 from nexocam.video.stream import run_pattern
@@ -38,6 +39,7 @@ class Worker(QThread):
     status_changed = Signal(str)
     pairing_ready = Signal(str, str, int)
     pairing_confirmed = Signal()
+    usb_result = Signal(bool, str)
 
     def __init__(self, device=None, diagnostics=False, receive=False):
         super().__init__()
@@ -48,6 +50,8 @@ class Worker(QThread):
         self.receive = receive
         self.lock = Lock()
         self.latest = None
+        self.usb_requested = Event()
+        self.usb_tunnel = None
 
     def publish(self, frame, count, fps):
         with self.lock:
@@ -72,11 +76,36 @@ class Worker(QThread):
                     paired=self.pairing_confirmed.emit,
                     portrait=self.portrait.is_set,
                 )
-                asyncio.run(server.run(self.stop))
+                asyncio.run(self.receive_stream(server))
             else:
                 run_pattern(self.stop, self.device, self.publish)
         except (OSError, ValueError, RuntimeError) as exc:
             self.failed.emit(f"Não foi possível concluir a operação: {exc}")
+        finally:
+            if self.usb_tunnel:
+                self.usb_tunnel.close()
+
+    async def receive_stream(self, server):
+        task = asyncio.create_task(server.run(self.stop))
+        try:
+            while not task.done():
+                if self.usb_requested.is_set() and server.bound_port:
+                    self.usb_requested.clear()
+                    try:
+                        if self.usb_tunnel is None:
+                            self.usb_tunnel = UsbTunnel(server.bound_port)
+                        await asyncio.to_thread(self.usb_tunnel.connect)
+                        if not self.stop.is_set():
+                            self.usb_result.emit(
+                                True, "Cabo USB configurado. Escaneie o QR no celular."
+                            )
+                    except UsbError as error:
+                        self.usb_result.emit(False, str(error))
+                await asyncio.sleep(0.05)
+            await task
+        finally:
+            self.stop.set()
+            await task
 
 
 def label(text, name="muted"):
@@ -145,11 +174,11 @@ class Window(QMainWindow):
         self.closing = False
         self.show_report = False
         self.report_dialog = None
-        self.status = label("Inicie uma sessão para conectar seu Android.", "statusText")
+        self.status = label("Conecte o cabo e clique em Conectar celular.", "statusText")
         self.status.setWordWrap(True)
         self.preview = VideoPreview()
         self.preview.setText(
-            "Sua câmera começa aqui.\n\nInicie uma sessão e escaneie o QR Code no Android."
+            "Conecte seu celular por USB.\n\nClique em Conectar celular para começar."
         )
         self.devices = QComboBox()
         self.devices.addItem("Somente prévia", None)
@@ -169,10 +198,10 @@ class Window(QMainWindow):
         self.mode.currentIndexChanged.connect(
             lambda: self.orientation.setEnabled(bool(self.mode.currentData()))
         )
-        self.start = QPushButton("Iniciar sessão")
+        self.start = QPushButton("Conectar celular")
         self.start.setObjectName("primary")
         self.start.clicked.connect(self.begin)
-        self.stop = QPushButton("Encerrar sessão")
+        self.stop = QPushButton("Desconectar")
         self.stop.setObjectName("stop")
         self.stop.setEnabled(False)
         self.stop.setVisible(False)
@@ -181,10 +210,15 @@ class Window(QMainWindow):
         self.diagnostics.setObjectName("ghost")
         self.diagnostics.clicked.connect(lambda: self.check(show_report=True))
         self.pairing_info = None
-        self.pairing_button = QPushButton("Conectar celular · QR Code")
+        self.usb_active = False
+        self.pairing_usb = True
+        self.usb_busy = False
+        self.usb_message = ""
+        self.pairing_button = QPushButton("Mostrar QR e instruções")
         self.pairing_button.setEnabled(False)
+        self.pairing_button.setVisible(False)
         self.pairing_button.clicked.connect(self.show_pairing)
-        self.metrics = label("FPS de saída · aguardando sessão")
+        self.metrics = label("Pronto para receber vídeo")
         self.fps_value = label("—", "statValue")
         self.frames_value = label("0", "statValue")
         self.device_hint = label("Escolha uma saída para usar no OBS.")
@@ -208,7 +242,6 @@ class Window(QMainWindow):
         header.addStretch()
         header.addWidget(self.badge)
         header.addSpacing(12)
-        header.addWidget(self.diagnostics)
         layout.addLayout(header)
         content = QHBoxLayout()
         content.setSpacing(20)
@@ -224,18 +257,27 @@ class Window(QMainWindow):
         video_header.addWidget(self.frame_format)
         video_layout.addLayout(video_header)
         video_layout.addWidget(self.preview, 1)
-        stats = QHBoxLayout()
+        stats_widget = QWidget()
+        stats_widget.setObjectName("videoStats")
+        stats = QHBoxLayout(stats_widget)
+        stats.setContentsMargins(0, 0, 0, 0)
         for title, value in (
             ("RESOLUÇÃO DE SAÍDA", label("640 × 480", "statValue")),
-            ("FPS DE SAÍDA", self.fps_value),
-            ("QUADROS DE SAÍDA", self.frames_value),
+            ("FPS DO VÍDEO", self.fps_value),
+            ("QUADROS EXIBIDOS", self.frames_value),
         ):
             stat = QVBoxLayout()
             stat.setSpacing(4)
             stat.addWidget(label(title, "eyebrow"))
             stat.addWidget(value)
             stats.addLayout(stat, 1)
-        video_layout.addLayout(stats)
+        stats_widget.setVisible(False)
+        stats_toggle = QPushButton("Estatísticas")
+        stats_toggle.setObjectName("ghost")
+        stats_toggle.setCheckable(True)
+        stats_toggle.toggled.connect(stats_widget.setVisible)
+        video_layout.addWidget(stats_toggle, alignment=Qt.AlignmentFlag.AlignRight)
+        video_layout.addWidget(stats_widget)
         video_layout.addWidget(self.metrics)
         content.addWidget(video_card, 1)
         panel = QFrame()
@@ -243,18 +285,35 @@ class Window(QMainWindow):
         controls = QVBoxLayout(panel)
         controls.setContentsMargins(22, 22, 22, 22)
         controls.setSpacing(12)
-        controls.addWidget(label("Conexão", "sectionTitle"))
-        controls.addWidget(label("Origem do vídeo", "eyebrow"))
-        controls.addWidget(self.mode)
-        controls.addWidget(label("Saída de vídeo", "eyebrow"))
+        controls.addWidget(label("Conecte seu celular", "sectionTitle"))
+        connection_hint = label(
+            "Conecte o cabo USB e autorize o computador no Android. Depois, leia o QR no NexoCam do celular."
+        )
+        connection_hint.setWordWrap(True)
+        controls.addWidget(connection_hint)
+        controls.addWidget(self.start)
+        controls.addWidget(self.stop)
+        controls.addWidget(self.pairing_button)
+        controls.addSpacing(12)
+        controls.addWidget(label("Usar imagem em", "eyebrow"))
         controls.addWidget(self.devices)
         controls.addWidget(self.device_hint)
         controls.addWidget(label("Formato", "eyebrow"))
         controls.addWidget(self.orientation)
-        controls.addSpacing(8)
-        controls.addWidget(self.start)
-        controls.addWidget(self.stop)
-        controls.addWidget(self.pairing_button)
+        advanced = QWidget()
+        advanced.setObjectName("advancedSettings")
+        advanced_layout = QVBoxLayout(advanced)
+        advanced_layout.setContentsMargins(0, 0, 0, 0)
+        advanced_layout.addWidget(label("Origem do vídeo", "eyebrow"))
+        advanced_layout.addWidget(self.mode)
+        advanced_layout.addWidget(self.diagnostics)
+        advanced.setVisible(False)
+        advanced_toggle = QPushButton("Opções avançadas")
+        advanced_toggle.setObjectName("ghost")
+        advanced_toggle.setCheckable(True)
+        advanced_toggle.toggled.connect(advanced.setVisible)
+        controls.addWidget(advanced_toggle)
+        controls.addWidget(advanced)
         controls.addStretch()
         status_card = QFrame()
         status_card.setObjectName("statusCard")
@@ -277,8 +336,10 @@ class Window(QMainWindow):
         self.setToolTip("Minimizar mantém a sessão ativa. Fechar encerra a transmissão.")
         self.setCentralWidget(root)
         self.timer = QTimer(self)
+        self.timer.setTimerType(Qt.TimerType.PreciseTimer)
         self.timer.timeout.connect(self.refresh)
-        self.timer.start(66)
+        # Consome a mailbox sem acrescentar outro ciclo inteiro de vídeo à espera.
+        self.timer.start(16)
         self.tray = None
         if QSystemTrayIcon.isSystemTrayAvailable():
             icon = self.style().standardIcon(self.style().StandardPixmap.SP_ComputerIcon)
@@ -368,6 +429,7 @@ class Window(QMainWindow):
         self.worker.status_changed.connect(self.status.setText)
         self.worker.pairing_ready.connect(self.paired)
         self.worker.pairing_confirmed.connect(self.close_pairing)
+        self.worker.usb_result.connect(self.usb_configured)
         self.mode.setEnabled(False)
         self.worker.failed.connect(self.error)
         self.worker.finished.connect(self.finished)
@@ -388,7 +450,25 @@ class Window(QMainWindow):
     def paired(self, fingerprint, token, port):
         self.pairing_info = (fingerprint, token, port)
         self.pairing_button.setEnabled(True)
+        self.pairing_button.setVisible(True)
+        if self.pairing_usb:
+            self.usb_busy = True
+            self.worker.usb_requested.set()
         self.show_pairing()
+
+    def usb_configured(self, success, message):
+        self.usb_busy = False
+        self.usb_active = success
+        self.usb_message = message
+        if (
+            self.worker
+            and not self.worker.stop.is_set()
+            and not self.closing
+            and self.report_dialog
+            and self.report_dialog.isVisible()
+            and self.report_dialog.windowTitle() == "Pareamento local seguro"
+        ):
+            self.show_pairing()
 
     def close_pairing(self):
         if self.report_dialog and self.report_dialog.windowTitle() == "Pareamento local seguro":
@@ -410,21 +490,46 @@ class Window(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         body = QWidget()
+        body.setObjectName("pairingBody")
         scroll.setWidget(body)
         outer.addWidget(scroll)
         dialog.setMinimumWidth(370)
-        dialog.resize(390, min(740, self.screen().availableGeometry().height() - 60))
+        dialog.resize(460, min(740, self.screen().availableGeometry().height() - 60))
         layout = QVBoxLayout(body)
         layout.setContentsMargins(24, 24, 24, 24)
         layout.setSpacing(14)
-        layout.addWidget(label("CONECTAR DISPOSITIVO", "eyebrow"))
         layout.addWidget(label("Conecte seu Android", "sectionTitle"))
-        instructions = label(
-            "No NexoCam Android, toque em Escanear QR Code.\n"
-            "A conexão de vídeo começa quando você confirmar no celular."
-        )
+        transport = QComboBox()
+        transport.setObjectName("pairingTransport")
+        transport.addItem("Cabo USB", True)
+        transport.addItem("Wi-Fi", False)
+        transport.setCurrentIndex(0 if self.pairing_usb else 1)
+        layout.addWidget(transport)
+        instructions = label("")
         instructions.setWordWrap(True)
         layout.addWidget(instructions)
+        usb_help = label(
+            "No primeiro uso, ative Depuração USB nas opções do desenvolvedor do Android "
+            "e autorize este computador. Use um cabo que transmita dados."
+        )
+        usb_help.setWordWrap(True)
+        layout.addWidget(usb_help)
+        usb_button = QPushButton("Verificar cabo novamente")
+        usb_button.setObjectName("ghost")
+        usb_button.setEnabled(not self.usb_busy)
+        layout.addWidget(usb_button)
+        usb_status = label("Preparando USB…" if self.usb_busy else self.usb_message)
+        usb_status.setWordWrap(True)
+        layout.addWidget(usb_status)
+
+        def prepare_usb():
+            if self.worker and not self.worker.stop.is_set():
+                self.usb_busy = True
+                usb_button.setEnabled(False)
+                usb_status.setText("Verificando cabo e autorização do celular…")
+                self.worker.usb_requested.set()
+
+        usb_button.clicked.connect(prepare_usb)
         from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
 
         interfaces = [
@@ -443,7 +548,8 @@ class Window(QMainWindow):
         addresses.sort(
             key=lambda item: (item[0].startswith(("docker", "br-", "veth", "virbr")), item[0])
         )
-        layout.addWidget(label("REDE DO COMPUTADOR", "eyebrow"))
+        network_title = label("REDE DO COMPUTADOR", "eyebrow")
+        layout.addWidget(network_title)
         address_picker = QComboBox()
         for name, address, netmask in addresses:
             address_picker.addItem(f"{name} — {address}", address)
@@ -453,12 +559,22 @@ class Window(QMainWindow):
             "libere o acesso à rede abaixo. Redes de convidados podem bloquear a conexão."
         )
         network_help.setWordWrap(True)
-        layout.addWidget(network_help)
+        wifi_details = QWidget()
+        wifi_details_layout = QVBoxLayout(wifi_details)
+        wifi_details_layout.setContentsMargins(0, 0, 0, 0)
+        wifi_details_layout.addWidget(network_help)
+        wifi_help = QPushButton("Problemas com o Wi-Fi?")
+        wifi_help.setObjectName("ghost")
+        wifi_help.setCheckable(True)
+        wifi_help.toggled.connect(wifi_details.setVisible)
+        layout.addWidget(wifi_help)
+        wifi_details.setVisible(False)
+        layout.addWidget(wifi_details)
         firewall_button = QPushButton("Liberar acesso no firewall…")
-        layout.addWidget(firewall_button)
+        wifi_details_layout.addWidget(firewall_button)
         firewall_status = label("")
         firewall_status.setWordWrap(True)
-        layout.addWidget(firewall_status)
+        wifi_details_layout.addWidget(firewall_status)
         ufw = shutil.which("ufw")
         pkexec = shutil.which("pkexec")
         firewall_button.setEnabled(bool(ufw and pkexec and addresses))
@@ -510,8 +626,35 @@ class Window(QMainWindow):
         layout.addWidget(qr_label)
         from nexocam.security.qr import payload, pixels
 
+        manual_address = QLineEdit()
+        manual_address.setReadOnly(True)
+
         def update_qr():
-            host = address_picker.currentData()
+            self.pairing_usb = bool(transport.currentData())
+            instructions.setText(
+                "1. Conecte o cabo e autorize o computador.\n"
+                "2. No celular, escaneie o QR abaixo.\n"
+                "3. Toque em Conectar e transmitir no celular."
+                if self.pairing_usb
+                else "Conecte os dois dispositivos ao mesmo Wi-Fi. No celular, escaneie o QR "
+                "e toque em Conectar e transmitir."
+            )
+            for widget in (usb_button, usb_status):
+                widget.setVisible(self.pairing_usb)
+            usb_help.setVisible(self.pairing_usb and not self.usb_active)
+            for widget in (
+                network_title,
+                address_picker,
+                wifi_help,
+            ):
+                widget.setVisible(not self.pairing_usb)
+            wifi_details.setVisible(not self.pairing_usb and wifi_help.isChecked())
+            qr_label.clear()
+            host = "127.0.0.1" if self.pairing_usb else address_picker.currentData()
+            manual_address.setText(host or "")
+            if self.pairing_usb and not self.usb_active:
+                qr_label.setText("O QR aparece quando o cabo estiver pronto.")
+                return
             if not host:
                 qr_label.setText(
                     "Nenhum IPv4 ativo encontrado. Conecte o computador à rede e reabra o pareamento."
@@ -525,10 +668,10 @@ class Window(QMainWindow):
                 data.strides[0],
                 QImage.Format.Format_Grayscale8,
             ).copy()
-            qr_label.setPixmap(QPixmap.fromImage(image))
+            qr_label.setPixmap(QPixmap.fromImage(image.convertToFormat(QImage.Format.Format_RGB32)))
 
         address_picker.currentIndexChanged.connect(update_qr)
-        update_qr()
+        transport.currentIndexChanged.connect(update_qr)
         manual = QWidget()
         manual_layout = QVBoxLayout(manual)
         manual.setVisible(False)
@@ -537,11 +680,13 @@ class Window(QMainWindow):
         )
         security_note.setWordWrap(True)
         layout.addWidget(security_note)
-        toggle = QPushButton("Preencher manualmente")
+        toggle = QPushButton("Conexão manual")
         toggle.setObjectName("ghost")
         toggle.clicked.connect(lambda: manual.setVisible(not manual.isVisible()))
         layout.addWidget(toggle)
         layout.addWidget(manual)
+        manual_layout.addWidget(QLabel("Endereço do computador"))
+        manual_layout.addWidget(manual_address)
         for field_label, value in (
             ("Impressão digital TLS", fingerprint),
             ("Segredo temporário", token),
@@ -551,11 +696,12 @@ class Window(QMainWindow):
             field.setReadOnly(True)
             field.setMinimumWidth(260)
             manual_layout.addWidget(field)
-        done = QPushButton("Concluir")
-        done.setObjectName("primary")
+        done = QPushButton("Fechar")
+        done.setObjectName("ghost")
         done.clicked.connect(dialog.close)
         layout.addWidget(done)
         self.report_dialog = dialog
+        update_qr()
         dialog.show()
 
     def end(self):
@@ -570,7 +716,11 @@ class Window(QMainWindow):
         self.worker = None
         self.mode.setEnabled(True)
         self.pairing_info = None
+        self.usb_active = self.usb_busy = False
+        self.pairing_usb = True
+        self.usb_message = ""
         self.pairing_button.setEnabled(False)
+        self.pairing_button.setVisible(False)
         if self.report_dialog:
             self.report_dialog.close()
             self.report_dialog = None
@@ -608,7 +758,11 @@ class Window(QMainWindow):
         self.preview.setPixmap(QPixmap.fromImage(image))
         self.fps_value.setText(f"{fps:.1f}")
         self.frames_value.setText(f"{count:,}".replace(",", "."))
-        self.metrics.setText("Saída · meta de 15 FPS")
+        self.metrics.setText(
+            "Vídeo recebido · últimos 1 s"
+            if self.worker and self.worker.receive
+            else "Saída · meta de 15 FPS"
+        )
 
     def closeEvent(self, event: QCloseEvent):
         self.closing = True

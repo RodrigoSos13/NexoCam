@@ -152,3 +152,159 @@ sensores 0/90/180/270 com buffers 640×480 e 480×640. Metadados inválidos recu
 ktlintCheck, lintDebug e assembleDebug aprovados. A prévia local também processa
 JPEG a até 15 FPS sem enviar antes de conectar. Avaliação física da orientação,
 consumo de CPU e resposta ao seletor permanece necessária. Release não atualizado.
+
+## Fluidez no receptor — 07/11/2026
+
+45 testes Linux aprovados. O novo teste TLS bloqueia deliberadamente a saída,
+transmite três quadros aguardando ACK individual e confirma que a captura não
+fica dependente do relógio de exibição. Ao liberar a saída, somente o quadro
+mais recente aparece, sem fila acumulada. Repetições não aumentam a contagem;
+FPS cai a zero e o quadro neutro aparece ao cessar o vídeo.
+
+O ACK continua significando validação e decodificação, antes do consumo por UI/OBS.
+A mailbox agora guarda um único quadro decodificado. A prévia Qt consulta essa
+mailbox a cada 16 ms com temporizador preciso, sem aumentar o alvo de 15 FPS do
+protocolo. Não exige atualizar o APK. A comparação física da fluidez/latência
+continua pendente: não havia sessão TCP nem encaminhamento USB ativo durante a
+investigação, então os testes não comprovam resolução das travadas no aparelho.
+
+## Processamento Android — 0.2.6-dev, 07/11/2026
+
+14 testes Android aprovados, ktlintCheck, lintDebug e assembleDebug concluídos.
+Os quatro novos testes verificam ritmo médio de 15 FPS em uma câmera simulada
+de 30 FPS com jitter, ausência de rajadas após uma pausa longa, preservação dos
+prazos após atrasos e rejeição de intervalo inválido.
+
+O processamento usa CameraX toBitmap, uma passagem de rotação/escala e uma
+compressão JPEG. A prévia usa o bitmap preparado em vez de descomprimir o JPEG;
+a captura não espera ACK de rede. A implementação de CameraX 1.4.2 foi conferida
+no artefato local: YUV segue convertYUVToBitmap, sem JPEG intermediário.
+Os testes de rotação anteriores continuam passando; a renderização no Canvas e
+o ganho de FPS/latência ainda precisam de avaliação física. Medidas agregadas
+estão disponíveis pelo log NexoCamPerf durante a câmera ativa.
+APK debug instalado via ADB no SM-S918B, preservando dados e assinatura original;
+versão 0.2.6-dev (versionCode 8) confirmada no aparelho. Em teste posterior, o
+usuário relatou melhora na fluidez e atraso ainda perceptível na prévia local.
+NexoCamPerf registrou aproximadamente 14,98–15,00 FPS após aquecimento inicial,
+com processamento médio de 13,2–14,0 ms e máximo de 21,6 ms. Não havia sessão TCP
+ou encaminhamento USB durante essa consulta; esses números são da captura local,
+não da transmissão nem da latência absoluta.
+
+## Prévia independente a 30 FPS — 0.2.7-dev
+
+15 testes Android aprovados; ktlintCheck, lintDebug e assembleDebug concluídos.
+O novo teste simula captura a 60 FPS por dez segundos e verifica aproximadamente
+300 quadros de prévia para 150 quadros elegíveis à transmissão. JPEG é opcional
+no quadro preparado; sem conexão apta ao envio, a prévia não comprime imagens.
+O envio mantém o protocolo de 15 FPS e o controle de um quadro em voo.
+APK instalado no SM-S918B e versão 0.2.7-dev (versionCode 9) confirmada.
+Após aquecimento inicial, NexoCamPerf mediu 28,84–29,77 FPS, processamento médio
+de 7,34–7,38 ms e máximo de 13,74 ms, contra cerca de 15 FPS e 13–14 ms na versão
+0.2.6. O usuário confirmou que o atraso da prévia ficou menor. Essas medidas são
+locais e não medem latência absoluta ou o percurso USB até o computador/OBS.
+
+## Tela ligada — Android 0.2.8-dev
+
+ktlintCheck, 15 testes unitários Android, lintDebug e assembleDebug aprovados.
+A View Compose usa keepScreenOn enquanto câmera e sessão estão ativas, incluindo
+conexão/reconexão. DisposableEffect restaura o valor anterior ao mudar de estado
+ou sair da composição. Nenhuma permissão ou configuração global foi adicionada.
+Ainda requer teste físico aguardando o tempo de desligamento durante a transmissão
+para confirmar que permanece ligada, e após desconectar para confirmar a liberação.
+
+## USB padrão e interface simplificada — Android 0.2.9-dev
+
+46 testes Linux e 15 testes Android aprovados. Ruff, formatação, ktlintCheck,
+lintDebug e assembleDebug aprovados. O teste de interface cobre USB selecionado
+inicialmente, preparação automática, falha de autorização e nova tentativa,
+QR com endereço local, troca para Wi-Fi e preservação da escolha ao reabrir o
+pareamento. Confirma também que estatísticas/opções avançadas começam recolhidas,
+que a ajuda de firewall fica oculta até ser solicitada e que o QR é desenhado.
+
+Telas principal e de pareamento revisadas por capturas Qt offscreen com credenciais
+fictícias. Corrigido fundo do conteúdo rolável para preservar contraste escuro.
+APK 0.2.9-dev (versionCode 11) instalado no SM-S918B, preservando dados; versão
+confirmada por ADB. A revisão visual Android e o fluxo completo de escanear e
+transmitir nesta versão ainda precisam de validação no aparelho desbloqueado.
+
+## Transmissão negociada a 30 FPS — Android 0.2.10-dev
+
+48 testes Linux e 18 Android aprovados; Ruff, formatação, ktlintCheck, lintDebug
+ e assembleDebug aprovados. Os testes TLS simulam envio a 15 e 30 FPS, verificam
+confirmação da taxa, ACK por quadro, saída real acima do antigo limite de 15 FPS
+na simulação de 30 e abertura da webcam virtual em 30 FPS por backend simulado.
+Os testes Android verificam seleção de 30 quando anunciado e retorno a 15 com
+receptor antigo ou capacidades inválidas, além do intervalo de captura.
+
+A saída usa prazos monotônicos, sem acumular arredondamentos de cada espera.
+O protocolo mantém autenticação, dimensões limitadas e um quadro em voo. A taxa
+real ainda exige teste físico de captura, codificação, USB, receptor e consumidor.
+APK instalado no celular via atualização preservando os dados. Medidas anteriores
+à atualização mostravam captura local de cerca de 29–30 FPS; isso não comprova
+que o receptor recebia essa mesma taxa.
+
+## Janela de envio — Android 0.2.11-dev
+
+48 testes Linux e 23 Android aprovados, com lint, formatação e APK debug gerado.
+O teste de janela simula ACK de 40 ms numa fonte de 30 FPS: um espaço permite
+30 envios em dois segundos; dois espaços permitem 60. Outros testes cobrem
+limite rígido de dois, envio rejeitado, limpeza, ACK fora de ordem/duplicado e
+capacidade explícita do receptor. O teste TLS envia dois quadros antes de esperar
+os ACKs, mantendo somente a última imagem na saída bloqueada.
+
+Na versão 0.2.10, teste físico por USB com alvo 30 reportou somente 14–15 FPS no
+desktop. O Android capturava cerca de 29 FPS mas codificava cerca de 14 FPS.
+A janela de dois tenta remover a espera serial de ACK; seu efeito físico precisa
+ser confirmado. NexoCamTransport mede taxa negociada, janela, FPS confirmado e
+média/máximo de ACK para distinguir essa limitação de outros gargalos. APK 0.2.11
+instalado no aparelho, preservando os dados.
+
+### Medidas físicas da janela de dois
+
+Na 0.2.11, USB ativo e alvo 30 confirmado: cerca de 24,9–25,8 FPS de ACK após
+início da sessão, com ACK médio de 39,1–43,5 ms e máximo de 80,8 ms. O celular
+capturava até 29,7 FPS e preparava cerca de 25 FPS para envio. O usuário relatou
+pouca melhora na exibição. Isso não comprova que o desktop mostrava 25 FPS:
+chegadas em rajada podem substituir quadros na mailbox antes da apresentação.
+
+O artefato local e o código oficial do OkHttp 4.12.0 foram inspecionados: a criação
+do socket no RealConnection não ativa TCP_NODELAY. A 0.2.12 configura a opção
+explicitamente no SocketFactory, sem substituir a fábrica TLS. Referência:
+[RealConnection 4.12.0](https://raw.githubusercontent.com/square/okhttp/parent-4.12.0/okhttp/src/main/kotlin/okhttp3/internal/connection/RealConnection.kt).
+
+## TCP_NODELAY — Android 0.2.12-dev
+
+24 testes Android aprovados, ktlintCheck, lintDebug e assembleDebug concluídos.
+O teste cria um socket pelo próprio cliente de pareamento e verifica TCP_NODELAY
+ativo antes de conectar, além de confirmar que redirecionamentos continuam
+bloqueados. Os testes de identidade TLS e janela de quadros continuam passando.
+APK instalado por atualização no celular. Comparação física do FPS exibido e do
+ACK após essa mudança ainda pendente.
+
+### Medidas físicas após TCP_NODELAY
+
+Na 0.2.12, alvo 30 e janela dois: ACK médio caiu para aproximadamente 6,9–8,1 ms,
+com amostras estabilizadas de 29,2–29,8 FPS confirmados. O usuário mediu 25–27 FPS
+na prévia desktop. Isso confirma melhora no transporte, mas mostra que a taxa
+confirmada ainda não era igual à taxa mostrada no desktop.
+
+## Acordar a prévia na chegada
+
+49 testes Linux aprovados. Um novo teste simula próximo tick virtual distante
+ e confirma que a chegada de quadro acorda a prévia antes desse prazo. A câmera
+virtual continua com relógio limitado à taxa negociada; a mailbox permanece de
+uma imagem. O Android 0.2.12 não precisa ser substituído para esse ajuste.
+Após reabrir o receptor e testar por USB, o usuário confirmou prévia mais próxima
+de 29–30 FPS, especialmente com a câmera frontal. Logs da sessão registraram
+amostra de aproximadamente 29,96 FPS confirmados, com ACK médio de 7,0 ms;
+outras janelas variaram entre cerca de 24 e 29 FPS conforme a captura.
+Isso valida a melhora de fluidez relatada, não uma garantia de 30 FPS constantes
+nas duas câmeras nem uma medição de latência absoluta até o OBS.
+
+## Texto curto e instruções — Android 0.2.13-dev
+
+24 testes Android, ktlintCheck, lintDebug e assembleDebug aprovados. O parágrafo
+inicial foi substituído por orientação curta em bodyMedium centralizada. Como
+conectar abre um diálogo rolável com seções USB, Wi-Fi e uso durante transmissão;
+a conexão manual fica acessível nesse diálogo. APK atualizado no celular sem
+remover dados. Revisão visual e interação com a ajuda no aparelho ainda pendentes.

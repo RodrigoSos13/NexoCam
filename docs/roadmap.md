@@ -7,8 +7,10 @@
    WebSocket TLS, pinning, segredo temporário manual, receptor integrado à UI,
    controle de fluxo, reconexão e testes TLS sem aparelho. Falta validar instalação,
    câmera física, câmeras frontal/traseira e Android → Wi-Fi → Linux → OBS.
-3. USB: protocolo compartilhado permite ADB Reverse manual; automação de detecção,
-   autorização, propriedade e limpeza dos encaminhamentos ainda não implementada.
+3. USB: configuração ADB Reverse integrada ao pareamento, seleção exclusiva USB,
+   mensagens de autorização, preservação de encaminhamentos existentes e limpeza
+   de encaminhamentos próprios implementadas e testadas sem aparelho. Vídeo real,
+   reconexão física e comparação de latência com Wi-Fi ainda precisam ser validados.
 4. Produto: QR implementado (validação física pendente); descoberta, pareamento persistente/revogação por aparelho,
    configurações completas, métricas, acessibilidade, tradução e instaladores.
 5. Medir latência/desempenho, otimizar conversão, avaliar H.264, ampliar matriz,

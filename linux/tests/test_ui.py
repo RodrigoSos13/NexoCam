@@ -4,7 +4,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 import pytest
 from PySide6.QtCore import QCoreApplication, QEvent
-from PySide6.QtWidgets import QApplication, QPushButton
+from PySide6.QtWidgets import QApplication, QComboBox, QLabel, QPushButton, QWidget
 
 from nexocam.ui.window import Window, Worker
 
@@ -57,12 +57,41 @@ def test_ui_preview_start_stop(app):
     app.processEvents()
 
 
-def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
+@pytest.mark.parametrize("usb_error", [False, True])
+def test_ui_receiver_start_stop(app, tmp_path, monkeypatch, usb_error):
     from time import monotonic, sleep
 
     from nexocam.security.identity import Identity
     from nexocam.ui import window as window_module
 
+    class FakeTunnel:
+        connected = False
+        closed = False
+        attempts = 0
+
+        def __init__(self, port):
+            assert port > 0
+
+        def connect(self):
+            FakeTunnel.attempts += 1
+            if usb_error and FakeTunnel.attempts == 1:
+                raise window_module.UsbError("Autorize a depuração USB no celular.")
+            FakeTunnel.connected = True
+
+        def close(self):
+            FakeTunnel.closed = True
+
+    monkeypatch.setattr(window_module, "UsbTunnel", FakeTunnel)
+    from nexocam.security import qr
+
+    qr_hosts = []
+    original_payload = qr.payload
+
+    def capture_payload(host, *args):
+        qr_hosts.append(host)
+        return original_payload(host, *args)
+
+    monkeypatch.setattr(qr, "payload", capture_payload)
     firewall_calls = []
     original_which = window_module.shutil.which
     monkeypatch.setattr(
@@ -94,12 +123,52 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
         assert window.pairing_info is not None
         assert window.pairing_button.isEnabled()
         assert window.report_dialog.isVisible()
+        assert not window.findChild(QWidget, "advancedSettings").isVisible()
+        assert not window.findChild(QWidget, "videoStats").isVisible()
         assert firewall_calls == []
+        transport = window.report_dialog.findChild(QComboBox, "pairingTransport")
+        assert transport.currentData() is True
+        while window.usb_busy and monotonic() < deadline:
+            app.processEvents()
+            sleep(0.01)
+        if usb_error:
+            assert not window.usb_active
+            assert "Autorize" in window.usb_message
+            assert not qr_hosts
+            usb_button = next(
+                button
+                for button in window.report_dialog.findChildren(QPushButton)
+                if button.text() == "Verificar cabo novamente"
+            )
+            usb_button.click()
+            while not window.usb_active and monotonic() < deadline:
+                app.processEvents()
+                sleep(0.01)
+        assert window.usb_active
+        assert FakeTunnel.connected
+        assert qr_hosts[-1] == "127.0.0.1"
+        qr_widget = window.report_dialog.findChild(QLabel, "qr")
+        qr_image = qr_widget.grab().toImage()
+        assert any(
+            qr_image.pixelColor(x, y).lightness() < 32
+            for y in range(24, qr_image.height() - 24, 4)
+            for x in range(24, qr_image.width() - 24, 4)
+        )  # O QR deve estar desenhado, não apenas uma área branca.
+        transport = window.report_dialog.findChild(QComboBox, "pairingTransport")
+        transport.setCurrentIndex(transport.findData(False))
         firewall_button = next(
             button
             for button in window.report_dialog.findChildren(QPushButton)
             if button.text() == "Liberar acesso no firewall…"
         )
+        assert not firewall_button.isVisible()
+        wifi_help = next(
+            button
+            for button in window.report_dialog.findChildren(QPushButton)
+            if button.text() == "Problemas com o Wi-Fi?"
+        )
+        wifi_help.click()
+        assert firewall_button.isVisible()
         if firewall_button.isEnabled():
             firewall_button.click()
             assert len(firewall_calls) == 1
@@ -107,17 +176,27 @@ def test_ui_receiver_start_stop(app, tmp_path, monkeypatch):
             assert program == "/usr/bin/pkexec"
             assert arguments[:2] == ["/usr/bin/ufw", "allow"]
             assert "/" in arguments[arguments.index("from") + 1]
+        transport = window.report_dialog.findChild(QComboBox, "pairingTransport")
+        transport.setCurrentIndex(transport.findData(True))
+        assert not firewall_button.isVisible()
+        assert qr_hosts[-1] == "127.0.0.1"
         window.worker.pairing_confirmed.emit()
         app.processEvents()
         assert not window.report_dialog.isVisible()
         window.show_pairing()
         assert window.report_dialog.isVisible()
+        assert window.report_dialog.findChild(QComboBox, "pairingTransport").currentData() is True
+        transport = window.report_dialog.findChild(QComboBox, "pairingTransport")
+        transport.setCurrentIndex(transport.findData(False))
+        window.show_pairing()
+        assert window.report_dialog.findChild(QComboBox, "pairingTransport").currentData() is False
     finally:
         window.close()
         while (window.worker is not None or window.checker is not None) and monotonic() < deadline:
             app.processEvents()
             sleep(0.01)
         assert window.worker is None
+        assert FakeTunnel.closed
         assert window.pairing_info is None
         window.deleteLater()
         QCoreApplication.sendPostedEvents(None, QEvent.Type.DeferredDelete)

@@ -2,6 +2,7 @@ import asyncio
 import json
 import logging
 import time
+from collections import deque
 from contextlib import nullcontext
 
 from websockets.asyncio.server import serve
@@ -51,8 +52,11 @@ class StreamServer:
         self.latest = None
         self.last_frame = 0.0
         self.received = self.dropped = 0
+        self.displayed = 0
         self.bound_port = None
         self.auth_timeout = 10
+        self.fps = 15
+        self.frame_ready = asyncio.Event()
 
     async def expect(self, ws, kind):
         raw = await asyncio.wait_for(ws.recv(), self.auth_timeout)
@@ -77,7 +81,7 @@ class StreamServer:
             purpose = hello.get("purpose", "stream")
             if purpose not in ("stream", "pairing"):
                 raise ProtocolError("Finalidade inválida.")
-            await ws.send(control("hello"))
+            await ws.send(control("hello", supported_fps=[15, 30], max_in_flight=2))
             auth = await self.expect(ws, "authenticate")
             if not self.pairing.authenticate(auth.get("token")):
                 await ws.close(1008, "Pareamento inválido ou expirado.")
@@ -97,19 +101,22 @@ class StreamServer:
             config = await self.expect(ws, "configure")
             if any(
                 type(config.get(k)) is not int or config[k] != v
-                for k, v in {"width": 640, "height": 480, "fps": 15}.items()
+                for k, v in {"width": 640, "height": 480}.items()
             ):
                 raise ProtocolError("Configuração de vídeo não suportada.")
+            if type(config.get("fps")) is not int or config["fps"] not in (15, 30):
+                raise ProtocolError("Taxa de quadros não suportada.")
+            self.fps = config["fps"]
             if config.get("codec") != "jpeg":
                 raise ProtocolError("Codec não suportado.")
             self.format_control = config.get("orientation_control") is True
             self.allowed_sizes = ((640, 480), (480, 640)) if self.format_control else ((640, 480),)
-            await ws.send(control("configure", width=640, height=480, fps=15, codec="jpeg"))
+            await ws.send(control("configure", width=640, height=480, fps=self.fps, codec="jpeg"))
             await self.expect(ws, "start")
             self.sent_portrait = self.portrait() if self.format_control else False
             await ws.send(control("state", state="streaming", portrait=self.sent_portrait))
             self.streaming = True
-            self.status(f"Transmitindo • {name}")
+            self.status(f"Transmitindo • {name} • até {self.fps} FPS")
             sequence = -1
             while True:
                 raw = await asyncio.wait_for(ws.recv(), timeout=20)
@@ -118,11 +125,16 @@ class StreamServer:
                         break
                     raise ProtocolError("Controle inesperado durante transmissão.")
                 sequence, jpeg = unpack_frame(raw, sequence, self.allowed_sizes)
+                frame = decode(jpeg, self.allowed_sizes)
                 if self.latest is not None:
                     self.dropped += 1
-                self.latest = (ws, sequence, jpeg)
+                self.latest = frame
                 self.last_frame = time.monotonic()
                 self.received += 1
+                self.frame_ready.set()
+                # Libera a próxima captura após validar/decodificar, sem aguardar
+                # o relógio da saída virtual ou o redesenho da interface.
+                await ws.send(control("state", state="frame", sequence=sequence))
         except (ProtocolError, TimeoutError):
             await ws.close(1008, "Sessão inválida ou tempo esgotado.")
         except ConnectionClosed:
@@ -137,9 +149,10 @@ class StreamServer:
                 self.status("Celular desconectado. Aguardando conexão autenticada.")
 
     async def output(self, camera):
-        count = 0
-        started = time.monotonic()
+        frame_times = deque()
+        next_tick = time.monotonic()
         while True:
+            self.frame_ready.clear()
             tick = time.monotonic()
             if (
                 self.active
@@ -154,33 +167,32 @@ class StreamServer:
                     )
                 except ConnectionClosed:
                     pass
-            jpeg, self.latest = self.latest, None
+            frame, self.latest = self.latest, None
             # Limita exibição da última imagem a 1 s, inclusive em conexão estagnada.
-            if jpeg is not None:
-                source, sequence, payload = jpeg
-                try:
-                    frame = decode(payload, self.allowed_sizes)
-                except ProtocolError:
-                    if self.active:
-                        await self.active.close(1008, "JPEG inválido.")
-                    frame = neutral()
+            if frame is not None:
                 self.current = frame
-                if source is self.active:
-                    try:
-                        await source.send(control("state", state="frame", sequence=sequence))
-                    except ConnectionClosed:
-                        pass
+                self.displayed += 1
+                frame_times.append(tick)
             elif self.active is None or tick - self.last_frame > 1:
                 self.current = neutral()
-            if camera:
-                camera.send(fit_output(self.current))
-            count += 1
-            self.publish(self.current, count, count / max(time.monotonic() - started, 1 / 15))
-            await asyncio.sleep(max(0, 1 / 15 - (time.monotonic() - tick)))
+            if tick >= next_tick:
+                if camera:
+                    camera.send(fit_output(self.current))
+                next_tick = max(next_tick + 1 / self.fps, time.monotonic())
+            while frame_times and tick - frame_times[0] >= 1:
+                frame_times.popleft()
+            self.publish(self.current, self.displayed, float(len(frame_times)))
+            try:
+                # A prévia reage ao quadro recebido, sem depender da fase do relógio V4L2.
+                await asyncio.wait_for(
+                    self.frame_ready.wait(), max(0, next_tick - time.monotonic())
+                )
+            except TimeoutError:
+                pass
 
     async def run(self, stop):
         self.current = neutral()
-        context = VirtualCameraManager(self.device) if self.device else nullcontext(None)
+        context = VirtualCameraManager(self.device, fps=30) if self.device else nullcontext(None)
         with context as camera:
             output = None
             try:

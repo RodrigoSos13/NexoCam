@@ -1,5 +1,6 @@
 package org.nexocam.app
 
+import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -14,14 +15,15 @@ import okhttp3.WebSocketListener
 import okio.ByteString.Companion.toByteString
 import org.json.JSONObject
 import java.nio.ByteBuffer
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.coroutines.resume
 
 class ConnectionManager(
     private val scope: CoroutineScope,
     private val status: (Int) -> Unit,
 ) {
+    @Volatile var fps = 15
+        private set
+
     @Volatile var portrait = false
         private set
 
@@ -31,9 +33,8 @@ class ConnectionManager(
         private set
     private var job: Job? = null
     private var client: OkHttpClient? = null
-    private val sequence = AtomicLong()
-    private val inFlight = AtomicBoolean(false)
-    val canSend: Boolean get() = streaming && !inFlight.get()
+    private val pendingFrames = PendingFrames()
+    val canSend: Boolean get() = streaming && pendingFrames.available
 
     fun connect(pairing: Pairing) {
         disconnect()
@@ -60,8 +61,14 @@ class ConnectionManager(
         pairing: Pairing,
     ): Boolean =
         suspendCancellableCoroutine { continuation ->
-            inFlight.set(false)
+            pendingFrames.reset()
             var stage = "hello"
+            var requestedFps = 15
+            var frameWindow = 1
+            var measuredFrom = System.nanoTime()
+            var ackCount = 0
+            var ackNanos = 0L
+            var longestAck = 0L
             var ended = false
 
             fun end(retry: Boolean) {
@@ -109,6 +116,9 @@ class ConnectionManager(
                                 when (stage) {
                                     "hello" -> {
                                         require(obj.getString("type") == "hello")
+                                        requestedFps = preferredStreamFps(obj)
+                                        frameWindow = preferredFrameWindow(obj)
+                                        pendingFrames.reset(frameWindow)
                                         stage = "auth"
                                         send(webSocket, "authenticate", JSONObject().put("token", pairing.token))
                                     }
@@ -124,7 +134,7 @@ class ConnectionManager(
                                             JSONObject()
                                                 .put("width", 640)
                                                 .put("height", 480)
-                                                .put("fps", 15)
+                                                .put("fps", requestedFps)
                                                 .put("codec", "jpeg")
                                                 .put("orientation_control", true),
                                         )
@@ -134,7 +144,7 @@ class ConnectionManager(
                                             obj.getString("type") == "configure" &&
                                                 obj.getInt("width") == 640 &&
                                                 obj.getInt("height") == 480 &&
-                                                obj.getInt("fps") == 15 &&
+                                                obj.getInt("fps") == requestedFps &&
                                                 obj.getString("codec") == "jpeg",
                                         )
                                         stage = "start"
@@ -146,6 +156,7 @@ class ConnectionManager(
                                         )
                                         stage = "streaming"
                                         portrait = obj.optBoolean("portrait", false)
+                                        fps = requestedFps
                                         streaming = true
                                         status(R.string.streaming)
                                     }
@@ -153,8 +164,25 @@ class ConnectionManager(
                                         require(obj.getString("type") == "state")
                                         when (obj.getString("state")) {
                                             "frame" -> {
-                                                require(obj.getLong("sequence") == sequence.get())
-                                                inFlight.set(false)
+                                                val now = System.nanoTime()
+                                                val elapsed = pendingFrames.acknowledge(obj.getLong("sequence"), now)
+                                                ackCount++
+                                                ackNanos += elapsed
+                                                longestAck = maxOf(longestAck, elapsed)
+                                                if (now - measuredFrom >= 5_000_000_000L) {
+                                                    val rate = ackCount * 1_000_000_000.0 / (now - measuredFrom)
+                                                    Log.d(
+                                                        "NexoCamTransport",
+                                                        "target_fps=$fps frame_window=$frameWindow " +
+                                                            "acked_fps=$rate " +
+                                                            "ack_ms=${ackNanos / ackCount / 1_000_000.0} " +
+                                                            "max_ack_ms=${longestAck / 1_000_000.0}",
+                                                    )
+                                                    measuredFrom = now
+                                                    ackCount = 0
+                                                    ackNanos = 0
+                                                    longestAck = 0
+                                                }
                                             }
                                             "format" -> {
                                                 require(obj.get("portrait") is Boolean)
@@ -209,27 +237,28 @@ class ConnectionManager(
         if (!streaming ||
             ws.queueSize() != 0L ||
             jpeg.size > 1048576 - 21 ||
-            !inFlight.compareAndSet(false, true)
+            !pendingFrames.available
         ) {
             return
         }
+        val sequence = pendingFrames.reserve(System.nanoTime()) ?: return
         val packet =
             ByteBuffer
                 .allocate(21 + jpeg.size)
                 .put(byteArrayOf(78, 88, 67, 70))
                 .put(1.toByte())
-                .putLong(sequence.incrementAndGet())
+                .putLong(sequence)
                 .putLong(System.nanoTime() / 1000)
                 .put(jpeg)
                 .array()
-        if (!ws.send(packet.toByteString())) inFlight.set(false)
+        if (!ws.send(packet.toByteString())) pendingFrames.rejected(sequence)
     }
 
     fun disconnect() {
         job?.cancel()
         job = null
         streaming = false
-        inFlight.set(false)
+        pendingFrames.reset()
         socket?.cancel()
         socket = null
         client?.dispatcher?.cancelAll()

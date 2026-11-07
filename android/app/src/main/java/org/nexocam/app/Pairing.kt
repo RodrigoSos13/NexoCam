@@ -78,6 +78,7 @@ fun pinnedClient(pairing: Pairing): OkHttpClient {
     val tls = SSLContext.getInstance("TLS").apply { init(null, arrayOf(trust), null) }
     return OkHttpClient
         .Builder()
+        .socketFactory(LowLatencySocketFactory())
         .sslSocketFactory(tls.socketFactory, trust)
         // O nome TLS permanece fixo e validado pelo verificador padrão do OkHttp.
         // Só o destino TCP varia; nenhum hostnameVerifier permissivo é instalado.

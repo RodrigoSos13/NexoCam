@@ -4,7 +4,7 @@ Webcam Android para Linux, localmente por Wi-Fi ou USB, sem nuvem, contas,
 telemetria ou gravação de vídeo. Licença MIT. **Versão experimental 0.2.0.dev1.**
 
 Implementado: captura Android CameraX com prévia e troca frontal/traseira;
-transmissão JPEG 640×480 com limite de 15 FPS, WebSocket TLS e pareamento manual;
+transmissão JPEG 640×480 de até 30 FPS negociados, WebSocket TLS e pareamento manual;
 receptor PySide6 com prévia e saída real por pyvirtualcam/v4l2loopback;
 reconexão cancelável, descarte de capturas e quadro neutro quando o vídeo para.
 O aplicativo Android precisa permanecer visível. A resolução de captura física
@@ -12,8 +12,9 @@ pode variar; o quadro transmitido é ajustado para 640×480 preservando proporç
 
 **Fluxo com câmera real recebido no OBS confirmado pelo usuário em 29/10/2026.**
 FPS, latência e estabilidade prolongada ainda não foram medidos. A nova interface
-Android 0.2.3-dev e o fechamento automático do QR exigem nova validação no aparelho.
-Pareamento por QR implementado; USB automatizado, descoberta e pareamento persistente estão pendentes.
+Android 0.2.13-dev e a ajuda sob demanda exigem nova validação no aparelho.
+Pareamento por QR e configuração USB via ADB implementados; validação física do
+USB, descoberta em rede e pareamento persistente estão pendentes.
 
 ## Linux
 
@@ -25,19 +26,40 @@ python -m venv .venv
 .venv/bin/nexocam
 ```
 
-1. Selecione a webcam virtual ou “Somente prévia”.
-2. Selecione **Receber do Android** e clique em **Iniciar**.
-3. Abra **Dados de pareamento**, escolha a interface da rede local e, no Android,
-   toque em **Escanear QR Code**. Os campos serão preenchidos. Não compartilhe essa tela.
-4. No Android, ative a câmera e toque em **Conectar e transmitir**.
-5. No OBS, selecione NexoCam como dispositivo V4L2.
+1. Escolha a webcam virtual ou “Somente prévia” em **Usar imagem em**.
+   Conecte o celular por cabo USB e autorize o computador no Android.
+2. Clique em **Conectar celular**. O USB é verificado automaticamente.
+3. No Android, toque em **Escanear QR para começar**, leia o QR do computador
+   e confirme **Conectar e transmitir**. Não compartilhe a tela de pareamento.
+4. No OBS, selecione NexoCam como dispositivo V4L2. “Somente prévia” mostra
+   apenas no receptor, sem saída para outros aplicativos.
 
-Linux e celular precisam se alcançar na rede local pela porta TCP 8765. O
-No pareamento, **Liberar acesso no firewall…** permite autorizar pelo sistema uma
+Para usar Wi-Fi, selecione **Wi-Fi** na janela do QR. Linux e celular precisam
+se alcançar na rede local pela porta TCP 8765. Em **Problemas com o Wi-Fi?**,
+**Liberar acesso no firewall…** permite autorizar pelo sistema uma
 regra UFW para a interface e sub-rede selecionadas. Assim, mudanças no IP do celular
 dentro dessa rede não exigem nova regra. Ao trocar de rede, repita a liberação.
 O programa não altera firewall sem essa ação nem modifica módulo do kernel ou permissões.
-O modo de teste sintético continua disponível na seleção de modo.
+Teste sintético e diagnósticos ficam em **Opções avançadas**. As estatísticas
+podem ser abertas abaixo da prévia.
+
+### Conectar por cabo USB
+
+1. Instale Android Platform Tools (ADB), conecte um cabo de dados e ative
+   **Depuração USB** nas opções do desenvolvedor do celular. Autorize o computador
+   na janela exibida no Android. Não é necessário root.
+2. Clique em **Conectar celular**. O receptor verifica o cabo automaticamente.
+3. No Android, escaneie o QR exibido e toque em **Conectar e transmitir**.
+
+O programa configura ADB Reverse e mantém TLS e segredo temporário. Não depende
+de Wi-Fi ou liberação no firewall. Ao encerrar a sessão, remove somente o
+encaminhamento criado por ela; encaminhamentos existentes não são sobrescritos.
+Após retirar/reconectar o cabo, use **Mostrar QR e instruções** → **Verificar cabo novamente**.
+ADB é procurado no PATH, ANDROID_HOME, ANDROID_SDK_ROOT e no SDK local `.tools/sdk`.
+USB pode reduzir oscilações da rede; a latência total ainda precisa ser medida
+e continua dependendo de CameraX, JPEG, FPS negociado e do consumidor de vídeo.
+Atualize Android e receptor para negociar até 30 FPS. Com um dos lados antigo,
+o protocolo mantém 15 FPS. A taxa real depende do aparelho e do tempo de ACK.
 
 ## Android
 

@@ -2,7 +2,6 @@ package org.nexocam.app
 
 import android.app.Application
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
@@ -39,11 +38,10 @@ class StreamViewModel(
             }
     }
 
-    fun frame(jpeg: ByteArray) {
-        connection.send(jpeg)
+    fun frame(frame: PreparedFrame) {
+        frame.jpeg?.let(connection::send)
         if (mutableCamera.value) {
-            val bitmap = BitmapFactory.decodeByteArray(jpeg, 0, jpeg.size)
-            if (mutableCamera.value) mutableTransmitted.value = bitmap
+            mutableTransmitted.value = frame.preview
         }
     }
 
