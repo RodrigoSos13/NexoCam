@@ -41,7 +41,15 @@ class Worker(QThread):
     pairing_confirmed = Signal()
     usb_result = Signal(bool, str)
 
-    def __init__(self, device=None, diagnostics=False, receive=False, video_size=(1920, 1080), quality=90, adaptive=True):
+    def __init__(
+        self,
+        device=None,
+        diagnostics=False,
+        receive=False,
+        video_size=(1920, 1080),
+        quality=90,
+        adaptive=True,
+    ):
         super().__init__()
         self.stop = Event()
         self.portrait = Event()
@@ -76,7 +84,9 @@ class Worker(QThread):
                     ready=self.pairing_ready.emit,
                     paired=self.pairing_confirmed.emit,
                     portrait=self.portrait.is_set,
-                    video_size=self.video_size, quality=self.quality, adaptive=self.adaptive,
+                    video_size=self.video_size,
+                    quality=self.quality,
+                    adaptive=self.adaptive,
                 )
                 asyncio.run(self.receive_stream(server))
             else:
@@ -191,10 +201,19 @@ class Window(QMainWindow):
         self.mode.addItem("Receber do Android", True)
         self.mode.addItem("Teste de imagem", False)
         self.resolution = QComboBox()
-        for title, size in [("Full HD · 1920 × 1080", (1920, 1080)), ("HD · 1280 × 720", (1280, 720)), ("VGA · 640 × 480", (640, 480))]:
+        for title, size in [
+            ("Full HD · 1920 × 1080", (1920, 1080)),
+            ("HD · 1280 × 720", (1280, 720)),
+            ("VGA · 640 × 480", (640, 480)),
+        ]:
             self.resolution.addItem(title, size)
         self.quality = QComboBox()
-        for title, value in [("Qualidade automática", (90, True)), ("Máxima · JPEG 100", (100, False)), ("Alta · JPEG 90", (90, False)), ("Econômica · JPEG 75", (75, False))]:
+        for title, value in [
+            ("Qualidade automática", (90, True)),
+            ("Máxima · JPEG 100", (100, False)),
+            ("Alta · JPEG 90", (90, False)),
+            ("Econômica · JPEG 75", (75, False)),
+        ]:
             self.quality.addItem(title, value)
         self.orientation = QComboBox()
         self.orientation.addItem("Horizontal", False)
@@ -438,8 +457,13 @@ class Window(QMainWindow):
             return
         device = self.devices.currentData()
         receiving = self.mode.currentData()
-        self.worker = Worker(device, receive=receiving, video_size=self.resolution.currentData(),
-                             quality=self.quality.currentData()[0], adaptive=self.quality.currentData()[1])
+        self.worker = Worker(
+            device,
+            receive=receiving,
+            video_size=self.resolution.currentData(),
+            quality=self.quality.currentData()[0],
+            adaptive=self.quality.currentData()[1],
+        )
         width, height = self.worker.video_size if receiving else (640, 480)
         self.output_resolution.setText(f"{width} × {height}")
         self.update_orientation()

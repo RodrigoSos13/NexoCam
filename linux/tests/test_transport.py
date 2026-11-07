@@ -66,7 +66,9 @@ async def wait_until(predicate):
             await asyncio.sleep(0.01)
 
 
-async def authenticate(ws, token, orientation_control=False, before_start=None, fps=15, size=(640, 480)):
+async def authenticate(
+    ws, token, orientation_control=False, before_start=None, fps=15, size=(640, 480)
+):
     await ws.send(control("hello", device="Teste sem celular"))
     hello = json.loads(await ws.recv())
     assert hello["type"] == "hello"
@@ -388,8 +390,14 @@ def test_preview_wakes_on_frame_before_virtual_output_deadline():
 @pytest.mark.parametrize("size", [(1280, 720), (1920, 1080)])
 def test_high_resolution_negotiation_and_orientation(tmp_path, size):
     async def scenario():
-        server = StreamServer(Identity(tmp_path / "tls"), host="127.0.0.1", port=0,
-                              video_size=size, quality=100, adaptive=False)
+        server = StreamServer(
+            Identity(tmp_path / "tls"),
+            host="127.0.0.1",
+            port=0,
+            video_size=size,
+            quality=100,
+            adaptive=False,
+        )
         stop = Event()
         task = asyncio.create_task(server.run(stop))
         try:
@@ -397,8 +405,12 @@ def test_high_resolution_negotiation_and_orientation(tmp_path, size):
             if task.done():
                 await task
             context = ssl.create_default_context(cafile=str(server.identity.cert_path))
-            async with connect(f"wss://127.0.0.1:{server.bound_port}", ssl=context,
-                               server_hostname="nexocam.local", proxy=None) as ws:
+            async with connect(
+                f"wss://127.0.0.1:{server.bound_port}",
+                ssl=context,
+                server_hostname="nexocam.local",
+                proxy=None,
+            ) as ws:
                 await authenticate(ws, server.pairing.token, orientation_control=True, size=size)
                 for sequence, dimensions in enumerate((size, size[::-1]), 1):
                     frame = np.full((dimensions[1], dimensions[0], 3), 120, dtype=np.uint8)
@@ -412,4 +424,5 @@ def test_high_resolution_negotiation_and_orientation(tmp_path, size):
         finally:
             stop.set()
             await asyncio.wait_for(task, 5)
+
     asyncio.run(scenario())

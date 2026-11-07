@@ -87,8 +87,16 @@ class StreamServer:
             purpose = hello.get("purpose", "stream")
             if purpose not in ("stream", "pairing"):
                 raise ProtocolError("Finalidade inválida.")
-            await ws.send(control("hello", supported_fps=[15, 30], max_in_flight=2,
-                                  video_size=self.video_size, quality=self.quality, adaptive=self.adaptive))
+            await ws.send(
+                control(
+                    "hello",
+                    supported_fps=[15, 30],
+                    max_in_flight=2,
+                    video_size=self.video_size,
+                    quality=self.quality,
+                    adaptive=self.adaptive,
+                )
+            )
             auth = await self.expect(ws, "authenticate")
             if not self.pairing.authenticate(auth.get("token")):
                 await ws.close(1008, "Pareamento inválido ou expirado.")
@@ -108,8 +116,12 @@ class StreamServer:
             config = await self.expect(ws, "configure")
             size = (config.get("width"), config.get("height"))
             supported = ((640, 480), (1280, 720), (1920, 1080))
-            if (any(type(value) is not int for value in size) or size not in supported
-                    or size[0] > self.video_size[0] or size[1] > self.video_size[1]):
+            if (
+                any(type(value) is not int for value in size)
+                or size not in supported
+                or size[0] > self.video_size[0]
+                or size[1] > self.video_size[1]
+            ):
                 raise ProtocolError("Configuração de vídeo não suportada.")
             if type(config.get("fps")) is not int or config["fps"] not in (15, 30):
                 raise ProtocolError("Taxa de quadros não suportada.")
@@ -118,8 +130,17 @@ class StreamServer:
                 raise ProtocolError("Codec não suportado.")
             self.format_control = config.get("orientation_control") is True
             self.allowed_sizes = (size, size[::-1]) if self.format_control else (size,)
-            await ws.send(control("configure", width=size[0], height=size[1], fps=self.fps, codec="jpeg",
-                                  quality=self.quality, adaptive=self.adaptive))
+            await ws.send(
+                control(
+                    "configure",
+                    width=size[0],
+                    height=size[1],
+                    fps=self.fps,
+                    codec="jpeg",
+                    quality=self.quality,
+                    adaptive=self.adaptive,
+                )
+            )
             await self.expect(ws, "start")
             self.sent_portrait = self.portrait() if self.format_control else False
             await ws.send(control("state", state="streaming", portrait=self.sent_portrait))
@@ -200,8 +221,15 @@ class StreamServer:
 
     async def run(self, stop):
         self.current = neutral(*self.video_size)
-        context = (VirtualCameraManager(self.device, fps=30) if self.video_size == (640, 480)
-                   else VirtualCameraManager(self.device, *self.video_size, fps=30)) if self.device else nullcontext(None)
+        context = (
+            (
+                VirtualCameraManager(self.device, fps=30)
+                if self.video_size == (640, 480)
+                else VirtualCameraManager(self.device, *self.video_size, fps=30)
+            )
+            if self.device
+            else nullcontext(None)
+        )
         with context as camera:
             output = None
             try:
